@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.next/
+.vercel/
+.env
+.env.local
+.env*.local
+.DS_Store
+*.log
+.claude/
+Conduit.zip
