@@ -1,0 +1,22 @@
+[Unit]
+Description=LND Lightning Daemon (mainnet)
+Requires=bitcoind.service
+After=bitcoind.service
+
+[Service]
+ExecStart=/usr/local/bin/lnd --lnddir=/home/conduit/.lnd
+ExecStop=/usr/local/bin/lncli --lnddir=/home/conduit/.lnd stop
+User=conduit
+Group=conduit
+Type=simple
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=600
+
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

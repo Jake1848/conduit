@@ -1,0 +1,273 @@
+"""MCP server exposing Conduit as tools.
+
+Any MCP-compatible client (Claude Desktop, Cursor, custom agents) can invoke
+these tools to make Bitcoin Lightning payments through a Conduit-managed
+agent wallet. All payments are still gated by the spending policy attached
+to the wallet — the AI cannot override it.
+
+Tools:
+  conduit_create_wallet   — provision a new agent wallet with a daily limit
+  conduit_attach_policy   — configure spending controls on a wallet
+  conduit_balance         — check current balance
+  conduit_pay             — send a payment (Lightning address or BOLT11)
+  conduit_receive         — generate an invoice for inbound funds
+  conduit_transactions    — list recent transactions
+
+Run:
+  conduit-mcp           # stdio transport (Claude Desktop, etc.)
+
+Required env:
+  CONDUIT_API_KEY=ck_live_... or ck_test_...
+  CONDUIT_API_URL=https://api.conduit.energy   (optional)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from typing import Any
+
+import mcp.server.stdio
+import mcp.types as types
+from mcp.server import NotificationOptions, Server
+from mcp.server.models import InitializationOptions
+
+from conduit import (
+    Agent,
+    ConduitError,
+    PolicyViolation,
+)
+
+server: Server = Server("conduit")
+
+
+def _agent_for_name_or_id(name_or_id: str) -> Agent:
+    if name_or_id.startswith("agt_"):
+        return Agent.get(name_or_id)
+    # search by name
+    for a in Agent.list():
+        if a.name == name_or_id:
+            return a
+    raise ConduitError(f"No agent matching {name_or_id!r}")
+
+
+@server.list_tools()
+async def list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="conduit_create_wallet",
+            description=(
+                "Create a new Bitcoin Lightning wallet for this AI agent. "
+                "The daily_limit (sats) is enforced by the Conduit policy engine — "
+                "the agent CANNOT spend more than this in 24h."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["name", "daily_limit"],
+                "properties": {
+                    "name": {"type": "string", "description": "Wallet name"},
+                    "daily_limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Max sats per 24h",
+                    },
+                },
+            },
+        ),
+        types.Tool(
+            name="conduit_attach_policy",
+            description=(
+                "Attach or replace the spending policy on an agent wallet. "
+                "Any payment violating the policy is rejected before reaching Lightning."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["agent"],
+                "properties": {
+                    "agent": {"type": "string", "description": "Agent name or ID"},
+                    "max_per_transaction": {"type": "integer", "minimum": 1},
+                    "max_per_hour": {"type": "integer", "minimum": 1},
+                    "max_per_day": {"type": "integer", "minimum": 1},
+                    "allowlist": {"type": "array", "items": {"type": "string"}},
+                    "blocklist": {"type": "array", "items": {"type": "string"}},
+                    "require_memo": {"type": "boolean"},
+                },
+            },
+        ),
+        types.Tool(
+            name="conduit_balance",
+            description="Check the current balance of an agent wallet.",
+            inputSchema={
+                "type": "object",
+                "required": ["agent"],
+                "properties": {"agent": {"type": "string"}},
+            },
+        ),
+        types.Tool(
+            name="conduit_pay",
+            description=(
+                "Send a Bitcoin Lightning payment from an agent wallet to a "
+                "Lightning address (name@host) or a BOLT11 invoice."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["agent", "to", "sats"],
+                "properties": {
+                    "agent": {"type": "string"},
+                    "to": {"type": "string"},
+                    "sats": {"type": "integer", "minimum": 1},
+                    "memo": {"type": "string"},
+                },
+            },
+        ),
+        types.Tool(
+            name="conduit_receive",
+            description="Generate a Lightning invoice for an agent wallet to receive funds.",
+            inputSchema={
+                "type": "object",
+                "required": ["agent", "amount"],
+                "properties": {
+                    "agent": {"type": "string"},
+                    "amount": {"type": "integer", "minimum": 1},
+                    "memo": {"type": "string"},
+                    "expiry": {"type": "integer", "minimum": 60, "default": 3600},
+                },
+            },
+        ),
+        types.Tool(
+            name="conduit_transactions",
+            description="List recent transactions for an agent wallet.",
+            inputSchema={
+                "type": "object",
+                "required": ["agent"],
+                "properties": {
+                    "agent": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 25},
+                },
+            },
+        ),
+    ]
+
+
+def _ok(payload: dict[str, Any]) -> list[types.TextContent]:
+    return [types.TextContent(type="text", text=json.dumps(payload, default=str, indent=2))]
+
+
+def _err(e: Exception) -> list[types.TextContent]:
+    body: dict[str, Any] = {"error": str(e)}
+    if isinstance(e, ConduitError):
+        body["code"] = e.code
+        body["detail"] = e.detail
+    if isinstance(e, PolicyViolation):
+        body["policy_violation"] = True
+    return [types.TextContent(type="text", text=json.dumps(body, default=str, indent=2))]
+
+
+@server.call_tool()
+async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
+    try:
+        if name == "conduit_create_wallet":
+            a = Agent.create(name=args["name"], daily_limit=int(args["daily_limit"]))
+            return _ok({"id": a.id, "name": a.name, "active": a.active})
+
+        if name == "conduit_attach_policy":
+            agent = _agent_for_name_or_id(args["agent"])
+            agent.policy.attach(
+                max_per_transaction=args.get("max_per_transaction"),
+                max_per_hour=args.get("max_per_hour"),
+                max_per_day=args.get("max_per_day"),
+                allowlist=args.get("allowlist"),
+                blocklist=args.get("blocklist"),
+                require_memo=bool(args.get("require_memo", False)),
+            )
+            return _ok({"ok": True, "agent_id": agent.id})
+
+        if name == "conduit_balance":
+            agent = _agent_for_name_or_id(args["agent"])
+            b = agent.balance
+            return _ok({
+                "agent_id": agent.id,
+                "available_sats": b.available,
+                "pending_sats": b.pending,
+                "total_sats": b.total,
+            })
+
+        if name == "conduit_pay":
+            agent = _agent_for_name_or_id(args["agent"])
+            receipt = agent.pay(
+                to=args["to"],
+                sats=int(args["sats"]),
+                memo=args.get("memo"),
+            )
+            return _ok({
+                "id": receipt.id,
+                "status": receipt.status,
+                "hash": receipt.hash,
+                "amount_sats": receipt.amount_sats,
+                "fee_sats": receipt.fee_sats,
+                "settled_in_ms": receipt.settled_in_ms,
+            })
+
+        if name == "conduit_receive":
+            agent = _agent_for_name_or_id(args["agent"])
+            inv = agent.receive(
+                amount=int(args["amount"]),
+                memo=args.get("memo"),
+                expiry=int(args.get("expiry", 3600)),
+            )
+            return _ok({
+                "id": inv.id,
+                "payment_request": inv.payment_request,
+                "payment_hash": inv.payment_hash,
+                "amount_sats": inv.amount_sats,
+                "expires_at": inv.expires_at.isoformat(),
+            })
+
+        if name == "conduit_transactions":
+            agent = _agent_for_name_or_id(args["agent"])
+            txns = agent.transactions(limit=int(args.get("limit", 25)))
+            return _ok({
+                "agent_id": agent.id,
+                "transactions": [
+                    {
+                        "id": t.id,
+                        "direction": t.direction,
+                        "amount_sats": t.amount_sats,
+                        "fee_sats": t.fee_sats,
+                        "status": t.status,
+                        "destination": t.destination,
+                        "created_at": t.created_at.isoformat(),
+                    }
+                    for t in txns
+                ],
+            })
+
+        raise ConduitError(f"Unknown tool: {name}", code="UNKNOWN_TOOL")
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+async def serve_stdio() -> None:
+    if not os.environ.get("CONDUIT_API_KEY"):
+        raise SystemExit(
+            "CONDUIT_API_KEY not set. Get a key from your Conduit operator "
+            "and export it before starting conduit-mcp."
+        )
+    async with mcp.server.stdio.stdio_server() as (read, write):
+        await server.run(
+            read,
+            write,
+            InitializationOptions(
+                server_name="conduit",
+                server_version="0.1.0",
+                capabilities=server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={},
+                ),
+            ),
+        )
+
+
+def main() -> None:
+    asyncio.run(serve_stdio())

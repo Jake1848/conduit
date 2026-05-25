@@ -1,0 +1,35 @@
+{
+  "name": "@conduit/sdk",
+  "version": "0.1.0",
+  "description": "Bitcoin Lightning payments for autonomous AI agents — Conduit SDK",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "homepage": "https://conduit.energy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jake1848/conduit.git",
+    "directory": "sdk-js"
+  },
+  "keywords": ["bitcoin", "lightning", "ai-agents", "payments", "lnd", "conduit"],
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.11.0"
+  }
+}

@@ -1,0 +1,27 @@
+# /home/conduit/.lnd-testnet/lnd.conf
+# Parallel testnet LND instance, separate ports and data dir.
+
+[Application Options]
+alias=Conduit-Testnet
+debuglevel=info
+accept-keysend=true
+accept-amp=true
+
+listen=0.0.0.0:9736
+rpclisten=127.0.0.1:10010
+restlisten=127.0.0.1:8081
+
+tlsextraip=VPS_PUBLIC_IP
+tlsextradomain=testnet.conduit.energy
+
+[Bitcoin]
+bitcoin.active=true
+bitcoin.testnet=true
+bitcoin.node=neutrino
+
+[neutrino]
+neutrino.connect=testnet.lnd.network:18333
+neutrino.connect=btcd-testnet.lightning.computer
+
+[protocol]
+protocol.wumbo-channels=true

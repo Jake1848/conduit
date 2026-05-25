@@ -1,0 +1,25 @@
+[Unit]
+Description=Bitcoin daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/bitcoind -daemon=0 -conf=/home/conduit/.bitcoin/bitcoin.conf -datadir=/home/conduit/.bitcoin
+ExecStop=/usr/local/bin/bitcoin-cli -conf=/home/conduit/.bitcoin/bitcoin.conf stop
+User=conduit
+Group=conduit
+Type=simple
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=infinity
+TimeoutStopSec=600
+
+# Hardening
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+PrivateDevices=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

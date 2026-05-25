@@ -1,0 +1,20 @@
+# /home/conduit/.bitcoin/bitcoin.conf
+# Pruned mainnet node feeding LND via ZMQ.
+
+server=1
+daemon=1
+txindex=0
+prune=50000
+
+rpcuser=conduit
+# Generate with: openssl rand -hex 32
+rpcpassword=REPLACE_WITH_64_CHAR_RANDOM
+rpcallowip=127.0.0.1
+rpcbind=127.0.0.1
+
+zmqpubrawblock=tcp://127.0.0.1:28332
+zmqpubrawtx=tcp://127.0.0.1:28333
+
+dbcache=2048
+maxmempool=300
+maxconnections=40

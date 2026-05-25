@@ -1,0 +1,57 @@
+site_name: Conduit
+site_description: Bitcoin Lightning payment infrastructure for autonomous AI agents.
+site_url: https://docs.conduit.energy
+repo_url: https://github.com/Jake1848/conduit
+repo_name: Jake1848/conduit
+edit_uri: edit/main/docs/docs/
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep orange
+      accent: orange
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts:
+      - Agents: concepts/agents.md
+      - Policies: concepts/policies.md
+      - Payments: concepts/payments.md
+      - Security: concepts/security.md
+  - SDKs:
+      - Python: sdk/python.md
+      - TypeScript: sdk/typescript.md
+      - MCP: sdk/mcp.md
+  - API:
+      - Overview: api/overview.md
+      - Authentication: api/authentication.md
+      - Agents: api/agents.md
+      - Policies: api/policies.md
+      - Payments: api/payments.md
+      - Invoices: api/invoices.md
+      - Transactions: api/transactions.md
+      - Webhooks: api/webhooks.md
+  - Reference:
+      - Errors: reference/errors.md
+      - Rate limits: reference/rate-limits.md
+      - Changelog: reference/changelog.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true

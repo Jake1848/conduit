@@ -1,12 +1,63 @@
-node_modules/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 dist/
 build/
+
+# Node
+node_modules/
+*.tsbuildinfo
 .next/
+.turbo/
+
+# Vercel
 .vercel/
+
+# Env / secrets
 .env
 .env.local
-.env*.local
-.DS_Store
+.env.*.local
+*.macaroon
+admin.macaroon
+tls.cert
+tls.key
+channel.backup
+seed.txt
+*.seed
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+conduit.db*
+
+# Logs
 *.log
-.claude/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Conduit specific
 Conduit.zip
+.claude/
+core/data/
+.thumbnail
+
+# Local reference material — exclude large external books/papers
+Mastering_the_Lightning_Network.pdf

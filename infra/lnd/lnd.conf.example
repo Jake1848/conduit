@@ -1,0 +1,35 @@
+# /home/conduit/.lnd/lnd.conf
+# Mainnet LND backed by the local pruned bitcoind.
+
+[Application Options]
+alias=Conduit
+debuglevel=info
+maxpendingchannels=5
+accept-keysend=true
+accept-amp=true
+gc-canceled-invoices-on-startup=true
+minchansize=100000
+maxlogfiles=3
+maxlogfilesize=10
+
+listen=0.0.0.0:9735
+rpclisten=127.0.0.1:10009
+restlisten=127.0.0.1:8080
+
+# Replace VPS_PUBLIC_IP with your Hetzner IP.
+tlsextraip=VPS_PUBLIC_IP
+tlsextradomain=conduit.energy
+
+[Bitcoin]
+bitcoin.active=true
+bitcoin.mainnet=true
+bitcoin.node=bitcoind
+
+[Bitcoind]
+bitcoind.rpcuser=conduit
+bitcoind.rpcpass=REPLACE_WITH_SAME_AS_BITCOIN_CONF
+bitcoind.zmqpubrawblock=tcp://127.0.0.1:28332
+bitcoind.zmqpubrawtx=tcp://127.0.0.1:28333
+
+[protocol]
+protocol.wumbo-channels=true
