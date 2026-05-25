@@ -19,7 +19,7 @@ import secrets
 import ssl
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -160,7 +160,7 @@ class MockLNDClient:
             preimage = secrets.token_hex(32)
             payment_hash = binascii.hexlify(_sha256(bytes.fromhex(preimage))).decode()
             payment_request = _fake_bolt11(self._network, amount_sats, payment_hash)
-            expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiry)
+            expires_at = datetime.now(UTC) + timedelta(seconds=expiry)
             inv = _MockInvoice(
                 payment_request=payment_request,
                 payment_hash=payment_hash,
@@ -197,7 +197,7 @@ class MockLNDClient:
             amount_sats=inv.amount_sats,
             destination=self._pubkey,
             description=inv.memo,
-            expiry=int((inv.expires_at - datetime.now(timezone.utc)).total_seconds()),
+            expiry=int((inv.expires_at - datetime.now(UTC)).total_seconds()),
         )
 
     async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult:
@@ -217,7 +217,8 @@ class MockLNDClient:
         async with self._lock:
             if amount_sats + fee > self._state.channel_local_sats:
                 raise PaymentFailed(
-                    f"Insufficient outbound channel capacity ({self._state.channel_local_sats} sats)"
+                    "Insufficient outbound channel capacity "
+                    f"({self._state.channel_local_sats} sats)"
                 )
             self._state.channel_local_sats -= amount_sats + fee
             self._state.channel_remote_sats += amount_sats
@@ -290,7 +291,7 @@ class LNDRestClient:
             payment_hash=payment_hash,
             amount_sats=amount_sats,
             memo=memo,
-            expires_at=datetime.now(timezone.utc) + timedelta(seconds=expiry),
+            expires_at=datetime.now(UTC) + timedelta(seconds=expiry),
         )
 
     async def decode_invoice(self, payment_request: str) -> DecodedInvoice:

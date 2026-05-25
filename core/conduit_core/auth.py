@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import bcrypt
 import structlog
@@ -45,7 +45,7 @@ async def _resolve_api_key(token: str, session: AsyncSession) -> APIKey:
     )
     for row in result.scalars():
         if verify_key(token, row.key_hash):
-            row.last_used_at = datetime.now(timezone.utc)
+            row.last_used_at = datetime.now(UTC)
             await session.commit()
             return row
     raise AuthenticationError("Invalid API key")

@@ -14,6 +14,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db.models import Webhook
 
 log = structlog.get_logger(__name__)
@@ -28,10 +29,14 @@ async def deliver(
     session: AsyncSession,
     event: str,
     payload: dict[str, Any],
-    max_retries: int = 6,
-    timeout: float = 10.0,
+    max_retries: int | None = None,
+    timeout: float | None = None,
 ) -> None:
     """Fan out an event to all active webhooks subscribed to it."""
+    settings = get_settings()
+    max_retries = max_retries if max_retries is not None else settings.webhook_max_retries
+    timeout = timeout if timeout is not None else float(settings.webhook_timeout_seconds)
+
     rows = (await session.execute(select(Webhook).where(Webhook.active.is_(True)))).scalars().all()
     if not rows:
         return
@@ -40,6 +45,7 @@ async def deliver(
         separators=(",", ":"),
         sort_keys=True,
     ).encode()
+    server_signature = sign(settings.api_secret_key, body_bytes)
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = []
@@ -50,7 +56,9 @@ async def deliver(
                 continue
             if event not in events and "*" not in events:
                 continue
-            tasks.append(_deliver_one(client, wh, body_bytes, event, max_retries))
+            tasks.append(
+                _deliver_one(client, wh, body_bytes, event, max_retries, server_signature)
+            )
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -61,10 +69,12 @@ async def _deliver_one(
     body: bytes,
     event: str,
     max_retries: int,
+    server_signature: str,
 ) -> None:
     headers = {
         "Content-Type": "application/json",
         "X-Conduit-Signature": sign(wh.secret, body),
+        "X-Conduit-Server-Signature": server_signature,
         "X-Conduit-Event": event,
         "X-Conduit-Webhook-Id": wh.id,
     }

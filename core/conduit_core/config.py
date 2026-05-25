@@ -1,8 +1,11 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_API_SECRET = "dev-secret-change-me"
+DEFAULT_BOOTSTRAP_KEY_DEV = "ck_test_dev_root"
 
 
 class Settings(BaseSettings):
@@ -14,7 +17,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field("sqlite+aiosqlite:///./data/conduit.db", alias="DATABASE_URL")
-    api_secret_key: str = Field("dev-secret-change-me", alias="API_SECRET_KEY")
+    # Server-wide HMAC pepper used (a) as a sentinel ("don't ship the dev value to prod")
+    # and (b) as the key for X-Conduit-Server-Signature on outbound webhook deliveries.
+    api_secret_key: str = Field(DEFAULT_API_SECRET, alias="API_SECRET_KEY")
     log_level: str = Field("info", alias="LOG_LEVEL")
 
     lnd_mock: bool = Field(True, alias="LND_MOCK")
@@ -24,8 +29,22 @@ class Settings(BaseSettings):
 
     bootstrap_api_key: str | None = Field(None, alias="BOOTSTRAP_API_KEY")
 
+    # CORS — comma-separated list, e.g. "https://conduit.energy,https://app.conduit.energy".
+    # Empty means cross-origin requests are not permitted (Same-Origin only).
+    allowed_origins_raw: str = Field("", alias="ALLOWED_ORIGINS")
+
+    # HTTP-layer rate limiting (token bucket, in-process).
+    # Set to 0 to disable.
+    rate_limit_per_minute: int = Field(300, alias="RATE_LIMIT_PER_MINUTE")
+    rate_limit_burst: int = Field(60, alias="RATE_LIMIT_BURST")
+
     webhook_max_retries: int = 6
     webhook_timeout_seconds: int = 10
+
+    @field_validator("env", mode="after")
+    @classmethod
+    def _normalize_env(cls, v: str) -> str:
+        return v.lower()
 
     @property
     def is_production(self) -> bool:
@@ -35,7 +54,58 @@ class Settings(BaseSettings):
     def api_key_prefix(self) -> str:
         return "ck_live_" if self.network == "mainnet" else "ck_test_"
 
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins_raw.split(",") if o.strip()]
+
+    def validate_for_runtime(self) -> list[str]:
+        """Return a list of fatal errors. Empty list means OK to start.
+
+        Called from main.py during lifespan startup. In production we refuse
+        to boot with insecure defaults — better a loud failure than a quiet
+        deployment that leaks the dev bootstrap key onto mainnet.
+        """
+        errors: list[str] = []
+        if self.is_production:
+            if self.api_secret_key == DEFAULT_API_SECRET:
+                errors.append(
+                    "API_SECRET_KEY must be set to a non-default value in production. "
+                    "Generate one with: openssl rand -hex 32"
+                )
+            if not self.bootstrap_api_key:
+                errors.append(
+                    "BOOTSTRAP_API_KEY must be set in production. The startup process "
+                    "uses this to install the first admin API key in a fresh DB."
+                )
+            elif self.bootstrap_api_key == DEFAULT_BOOTSTRAP_KEY_DEV:
+                errors.append(
+                    f"BOOTSTRAP_API_KEY is set to the dev default ({DEFAULT_BOOTSTRAP_KEY_DEV!r}). "
+                    "Generate a fresh value before deploying to production."
+                )
+            elif not self.bootstrap_api_key.startswith(self.api_key_prefix):
+                errors.append(
+                    f"BOOTSTRAP_API_KEY must start with {self.api_key_prefix!r} on "
+                    f"the {self.network} network."
+                )
+            if self.network == "mainnet" and not self.bootstrap_api_key.startswith("ck_live_"):
+                errors.append(
+                    "Mainnet network requires a BOOTSTRAP_API_KEY with prefix ck_live_."
+                )
+            if self.database_url.startswith("sqlite"):
+                # SQLite does not support concurrent writes from multiple processes
+                # and lacks row-level locking. Refuse to start in production.
+                errors.append(
+                    "SQLite is not supported in production. Use Postgres: "
+                    "DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/conduit"
+                )
+        return errors
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def reset_settings_cache() -> None:
+    """Test helper — clears the lru_cache so test envvars are re-read."""
+    get_settings.cache_clear()

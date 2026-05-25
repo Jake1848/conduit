@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends
@@ -9,15 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_scope
 from ..db import get_session
 from ..db.models import Agent, Policy, Transaction
-from ..errors import AgentNotFound, InvalidInput, PaymentFailed, PolicyViolation
+from ..errors import (
+    AgentNotFound,
+    InsufficientBalance,
+    InvalidInput,
+    PaymentFailed,
+    PolicyViolation,
+)
 from ..schemas import PaymentPayIn, PaymentSendIn, ReceiptOut
 from ..services.ids import tx_id as new_tx_id
 from ..services.lnd import get_lnd
-from ..services.policy_engine import (
-    PaymentRequest,
-    PolicyEngine,
-    agent_payment_lock,
-)
+from ..services.policy_engine import PaymentRequest, PolicyEngine
 from ..services.wallet import (
     is_bolt11,
     is_lightning_address,
@@ -29,16 +31,9 @@ router = APIRouter(prefix="/v1/payments", tags=["payments"])
 log = structlog.get_logger(__name__)
 
 
-async def _load(session: AsyncSession, agent_id: str) -> tuple[Agent, Policy | None]:
-    agent = await session.get(Agent, agent_id)
-    if agent is None:
-        raise AgentNotFound(f"No agent with id {agent_id}")
-    if not agent.active:
-        raise PolicyViolation(f"Agent {agent_id} is inactive", code="AGENT_INACTIVE")
-    policy = (
-        await session.execute(select(Policy).where(Policy.agent_id == agent_id))
-    ).scalar_one_or_none()
-    return agent, policy
+def _estimate_max_fee_sats(sats: int) -> int:
+    """Conservative routing fee budget: 1% with a 1-sat floor."""
+    return max(1, sats // 100)
 
 
 async def _execute_payment(
@@ -51,9 +46,27 @@ async def _execute_payment(
     invoice: str | None,
     dest_pubkey: str | None,
 ) -> ReceiptOut:
-    agent, policy = await _load(session, agent_id)
+    fee_budget = _estimate_max_fee_sats(sats)
+    debit_total = sats + fee_budget
 
-    async with agent_payment_lock(agent_id):
+    # ----- Phase 1: locked decision + debit + pending row -----
+    # SQLAlchemy 2.0 implicitly begins a transaction on the first query.
+    # The row lock from with_for_update() is held until commit().
+    try:
+        agent_row = await session.execute(
+            select(Agent).where(Agent.id == agent_id).with_for_update()
+        )
+        agent = agent_row.scalar_one_or_none()
+        if agent is None:
+            raise AgentNotFound(f"No agent with id {agent_id}")
+        if not agent.active:
+            raise PolicyViolation(f"Agent {agent_id} is inactive", code="AGENT_INACTIVE")
+
+        policy_row = await session.execute(
+            select(Policy).where(Policy.agent_id == agent_id)
+        )
+        policy = policy_row.scalar_one_or_none()
+
         engine = PolicyEngine(session)
         decision = await engine.evaluate(
             policy,
@@ -82,13 +95,24 @@ async def _execute_payment(
                 minute_count=decision.minute_count,
             )
 
-        # Record a pending Transaction *before* talking to LND so concurrent
-        # evaluations count it against the window.
+        if (agent.balance_sats or 0) < debit_total:
+            raise InsufficientBalance(
+                f"Agent balance {agent.balance_sats} sats < required {debit_total} "
+                f"({sats} + {fee_budget} fee budget). Credit the agent via "
+                f"POST /v1/agents/{agent_id}/credit before retrying.",
+                agent_id=agent_id,
+                balance_sats=agent.balance_sats or 0,
+                required_sats=debit_total,
+            )
+
+        agent.balance_sats -= debit_total
+
         tx = Transaction(
             id=new_tx_id(),
             agent_id=agent_id,
             direction="send",
             amount_sats=sats,
+            fee_sats=fee_budget,  # reserved budget; corrected to actual on settle
             destination=destination,
             payment_request=invoice,
             status="pending",
@@ -96,57 +120,99 @@ async def _execute_payment(
             metadata_json=json.dumps(metadata) if metadata else None,
         )
         session.add(tx)
-        await session.commit()
-        await session.refresh(tx)
+        await session.commit()  # releases the row lock
+    except Exception:
+        await session.rollback()
+        raise
 
+    await session.refresh(tx)
+    tx_id_local = tx.id
+    created_at = tx.created_at
+
+    # ----- Phase 2: contact LND outside the lock -----
     lnd = get_lnd()
     try:
         if invoice:
-            result = await lnd.pay_invoice(invoice, max_fee_sats=max(1, sats // 100))
+            result = await lnd.pay_invoice(invoice, max_fee_sats=fee_budget)
         elif dest_pubkey:
             result = await lnd.keysend(dest_pubkey, sats, memo or "")
         else:
             raise InvalidInput("Either payment_request or dest_pubkey is required")
     except PaymentFailed as e:
-        tx.status = "failed"
-        tx.failure_reason = str(e.detail)
-        await session.commit()
+        # ----- Phase 3a: failure → refund the full debit -----
+        try:
+            refund_agent = (
+                await session.execute(
+                    select(Agent).where(Agent.id == agent_id).with_for_update()
+                )
+            ).scalar_one()
+            refund_agent.balance_sats += debit_total
+            failed_tx = await session.get(Transaction, tx_id_local)
+            assert failed_tx is not None
+            failed_tx.status = "failed"
+            failed_tx.failure_reason = str(e.detail)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         await deliver(
             session,
             "payment.failed",
-            {"transaction_id": tx.id, "agent_id": agent_id, "reason": str(e.detail)},
+            {
+                "transaction_id": tx_id_local,
+                "agent_id": agent_id,
+                "amount_sats": sats,
+                "reason": str(e.detail),
+            },
         )
         raise
 
-    tx.status = "settled"
-    tx.payment_hash = result.payment_hash
-    tx.payment_preimage = result.payment_preimage
-    tx.fee_sats = result.fee_sats
-    tx.latency_ms = result.latency_ms
-    tx.settled_at = datetime.now(timezone.utc)
-    await session.commit()
+    # ----- Phase 3b: success → reconcile fee budget vs actual fee -----
+    actual_fee = max(0, int(result.fee_sats))
+    fee_refund = max(0, fee_budget - actual_fee)
+    try:
+        settle_agent = (
+            await session.execute(
+                select(Agent).where(Agent.id == agent_id).with_for_update()
+            )
+        ).scalar_one()
+        if fee_refund > 0:
+            settle_agent.balance_sats += fee_refund
+        settled_tx = await session.get(Transaction, tx_id_local)
+        assert settled_tx is not None
+        settled_tx.status = "settled"
+        settled_tx.payment_hash = result.payment_hash
+        settled_tx.payment_preimage = result.payment_preimage
+        settled_tx.fee_sats = actual_fee
+        settled_tx.latency_ms = result.latency_ms
+        settled_tx.settled_at = datetime.now(UTC)
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+
     await deliver(
         session,
         "payment.settled",
         {
-            "transaction_id": tx.id,
+            "transaction_id": tx_id_local,
             "agent_id": agent_id,
-            "amount_sats": tx.amount_sats,
-            "fee_sats": tx.fee_sats,
-            "hash": tx.payment_hash,
+            "amount_sats": sats,
+            "fee_sats": actual_fee,
+            "hash": result.payment_hash,
         },
     )
     return ReceiptOut(
-        id=tx.id,
+        id=tx_id_local,
         agent_id=agent_id,
         status="settled",
-        hash=tx.payment_hash,
-        amount_sats=tx.amount_sats,
-        fee_sats=tx.fee_sats,
-        settled_in_ms=tx.latency_ms,
+        hash=result.payment_hash,
+        amount_sats=sats,
+        fee_sats=actual_fee,
+        settled_in_ms=result.latency_ms,
         destination=destination,
         memo=memo,
-        created_at=tx.created_at,
+        created_at=created_at,
     )
 
 

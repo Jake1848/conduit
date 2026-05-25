@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +37,19 @@ class BalanceOut(BaseModel):
     available_sats: int
     pending_sats: int
     total_sats: int
+
+
+class LedgerAdjustIn(BaseModel):
+    sats: int = Field(..., ge=1, description="Amount to credit (or debit) in sats")
+    reason: str = Field("", max_length=200)
+    metadata: dict[str, Any] | None = None
+
+
+class LedgerAdjustOut(BaseModel):
+    agent_id: str
+    transaction_id: str
+    delta_sats: int  # positive = credit, negative = debit
+    balance_sats: int
 
 
 # ---------- Policies ----------
@@ -185,5 +198,5 @@ class APIKeyOut(BaseModel):
     id: str
     label: str
     scope: Scope
-    secret: Optional[str] = Field(None, description="Shown exactly once at creation")
+    secret: str | None = Field(None, description="Shown exactly once at creation")
     created_at: datetime

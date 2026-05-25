@@ -14,6 +14,8 @@ COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install .
 
 COPY conduit_core ./conduit_core
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 
 RUN mkdir -p /app/data
 

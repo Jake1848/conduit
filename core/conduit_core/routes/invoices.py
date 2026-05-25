@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -50,7 +50,7 @@ async def create_invoice(
         amount_sats=body.amount,
         memo=body.memo,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=body.expiry),
+        expires_at=datetime.now(UTC) + timedelta(seconds=body.expiry),
         created_at=tx.created_at,
     )
 

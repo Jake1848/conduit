@@ -9,11 +9,10 @@ machine-readable code so SDKs can branch on it.
 
 from __future__ import annotations
 
-import asyncio
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import and_, func, select
@@ -86,20 +85,12 @@ async def _window_sum(
     return int(sats or 0), int(count or 0)
 
 
-# ---------- Per-agent locks (serialize decisions for a given agent) ----------
-
-_agent_locks: dict[str, asyncio.Lock] = {}
-
-
-def _lock_for(agent_id: str) -> asyncio.Lock:
-    lock = _agent_locks.get(agent_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _agent_locks[agent_id] = lock
-    return lock
-
-
 # ---------- Engine ----------
+#
+# Serialization for the same agent is provided by SELECT ... FOR UPDATE on the
+# agents row in the calling route (see routes/payments.py). On SQLite that's a
+# no-op SQL clause but BEGIN IMMEDIATE provides global write serialization, so
+# decisions remain race-free.
 
 class PolicyEngine:
     """Evaluates a payment against an agent's policy.
@@ -147,7 +138,9 @@ class PolicyEngine:
         block = _decode_list(policy.blocklist)
         allow = _decode_list(policy.allowlist)
         if _matches(req, block):
-            return Decision(False, CODE_BLOCKLISTED, f"Destination is blocklisted: {req.destination}")
+            return Decision(
+                False, CODE_BLOCKLISTED, f"Destination is blocklisted: {req.destination}"
+            )
         if allow and not _matches(req, allow):
             return Decision(
                 False,
@@ -163,7 +156,7 @@ class PolicyEngine:
                 f"{policy.max_per_transaction} sats.",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         hour_sats, _ = await _window_sum(self.session, req.agent_id, now - timedelta(hours=1))
         day_sats, _ = await _window_sum(self.session, req.agent_id, now - timedelta(days=1))
         _, minute_count = await _window_sum(self.session, req.agent_id, now - timedelta(minutes=1))
@@ -209,7 +202,7 @@ class PolicyEngine:
         )
 
     async def _rate_only(self, req: PaymentRequest) -> Decision:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _, minute_count = await _window_sum(self.session, req.agent_id, now - timedelta(minutes=1))
         if minute_count + 1 > 60:
             return Decision(
@@ -251,9 +244,3 @@ def encode_list(items: list[str] | None) -> str | None:
     if not items:
         return None
     return json.dumps([s.strip() for s in items if s.strip()])
-
-
-# ---------- Lock helper used by the payment route ----------
-
-def agent_payment_lock(agent_id: str) -> asyncio.Lock:
-    return _lock_for(agent_id)

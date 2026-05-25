@@ -2,13 +2,16 @@ import logging
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import __version__
 from .auth import ensure_bootstrap_key
 from .config import get_settings
 from .db import SessionLocal, init_db
+from .errors import ConduitError
+from .middleware import RateLimitMiddleware
 from .routes import (
     agents,
     invoices,
@@ -42,17 +45,55 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     _configure_logging(settings.log_level)
     log = structlog.get_logger(__name__)
+
+    # Refuse to start with insecure defaults in production.
+    errors = settings.validate_for_runtime()
+    if errors:
+        for e in errors:
+            log.error("startup_config_error", error=e)
+        raise SystemExit(
+            "Conduit refuses to start: production safety check failed.\n  - "
+            + "\n  - ".join(errors)
+        )
+
     log.info(
         "conduit_starting",
         version=__version__,
         env=settings.env,
         network=settings.network,
         lnd_mock=settings.lnd_mock,
+        database_dialect=settings.database_url.split(":", 1)[0],
+        allowed_origins=settings.allowed_origins,
+        rate_limit_per_minute=settings.rate_limit_per_minute,
     )
+
     await init_db()
     async with SessionLocal() as s:
         await ensure_bootstrap_key(s)
-    get_lnd()  # warm singleton
+
+    lnd = get_lnd()
+    # If we're meant to be talking to a real LND, fail fast at boot rather
+    # than discovering it on the first payment.
+    if not settings.lnd_mock:
+        try:
+            info = await lnd.get_info()
+            log.info(
+                "lnd_reachable",
+                alias=info.alias,
+                pubkey=info.pubkey,
+                block_height=info.block_height,
+                synced=info.synced_to_chain,
+            )
+            if not info.synced_to_chain:
+                log.warning("lnd_not_synced_to_chain")
+        except Exception as e:  # noqa: BLE001
+            log.error("lnd_unreachable", error=str(e))
+            raise SystemExit(
+                f"Conduit cannot reach LND at {settings.lnd_rest_url}: {e}. "
+                "Check LND_REST_URL, LND_MACAROON_PATH, LND_TLS_CERT_PATH, "
+                "and that LND is unlocked."
+            ) from e
+
     try:
         yield
     finally:
@@ -67,12 +108,45 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_settings = get_settings()
+
+# CORS — explicit allowlist only. Empty list = no cross-origin requests.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_settings.allowed_origins,
+    allow_credentials=bool(_settings.allowed_origins),
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=600,
 )
+
+# In-process token-bucket rate limiter. See middleware.py for the worker caveat.
+app.add_middleware(RateLimitMiddleware, settings=_settings)
+
+
+@app.exception_handler(ConduitError)
+async def _conduit_error_handler(_: Request, exc: ConduitError) -> JSONResponse:
+    # Let our typed ConduitError flow through with its structured detail body.
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+    # Catch-all so a crash on a payment path returns structured JSON, not HTML.
+    # Logged with traceback for debugging. The user-facing detail is generic;
+    # internals don't leak through the wire.
+    structlog.get_logger(__name__).exception("unhandled_exception", error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "error": "internal_error",
+                "code": "INTERNAL_ERROR",
+                "detail": "An unexpected error occurred. The incident has been logged.",
+            }
+        },
+    )
+
 
 app.include_router(system.router)
 app.include_router(keys.router)

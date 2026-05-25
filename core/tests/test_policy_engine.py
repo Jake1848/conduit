@@ -1,5 +1,7 @@
 """Policy engine — the safety-critical piece. Tests verify fail-closed behavior."""
 
+from datetime import UTC
+
 import pytest
 
 from conduit_core.db.models import Agent, Policy
@@ -120,7 +122,7 @@ async def test_allowlist_blocks_others(session):
 @pytest.mark.asyncio
 async def test_daily_limit_with_existing_pending(session):
     """Pending sends count against the daily window — prevents racing past the limit."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from conduit_core.db.models import Transaction
     from conduit_core.services.ids import tx_id as new_tx_id
@@ -136,7 +138,7 @@ async def test_daily_limit_with_existing_pending(session):
             amount_sats=800,
             fee_sats=0,
             status="pending",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
     )
     await session.commit()
@@ -146,7 +148,7 @@ async def test_daily_limit_with_existing_pending(session):
 
 @pytest.mark.asyncio
 async def test_hourly_limit(session):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from conduit_core.db.models import Transaction
     from conduit_core.services.ids import tx_id as new_tx_id
@@ -162,7 +164,7 @@ async def test_hourly_limit(session):
             amount_sats=400,
             fee_sats=0,
             status="settled",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
     )
     await session.commit()
@@ -172,7 +174,7 @@ async def test_hourly_limit(session):
 
 @pytest.mark.asyncio
 async def test_rate_limit_per_minute(session):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from conduit_core.db.models import Transaction
     from conduit_core.services.ids import tx_id as new_tx_id
@@ -188,7 +190,7 @@ async def test_rate_limit_per_minute(session):
                 direction="send",
                 amount_sats=10,
                 status="settled",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
         )
     await session.commit()
