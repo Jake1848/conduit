@@ -1,4 +1,6 @@
+import hashlib
 import json
+import secrets
 from datetime import UTC, datetime
 from typing import Any
 
@@ -105,7 +107,18 @@ async def _execute_payment(
     metadata: dict | None,
     invoice: str | None,
     dest_pubkey: str | None,
+    *,
+    payment_hash: str,
+    keysend_preimage: bytes | None = None,
 ) -> ReceiptOut:
+    """Run a payment.
+
+    `payment_hash` MUST be known up-front and is stored on the pending row
+    so the reconciler can identify the payment in LND after a crash/timeout.
+    For BOLT11 we get it from `decode_invoice`; for keysend the caller
+    pre-generates a preimage and derives the hash from it (and passes the
+    same preimage in `keysend_preimage` so LND uses it).
+    """
     fee_budget = _estimate_max_fee_sats(sats)
     debit_total = sats + fee_budget
 
@@ -175,6 +188,7 @@ async def _execute_payment(
             fee_sats=fee_budget,  # reserved budget; corrected to actual on settle
             destination=destination,
             payment_request=invoice,
+            payment_hash=payment_hash,  # known up-front so reconciler can find it
             status="pending",
             memo=memo,
             metadata_json=json.dumps(metadata) if metadata else None,
@@ -195,7 +209,9 @@ async def _execute_payment(
         if invoice:
             result = await lnd.pay_invoice(invoice, max_fee_sats=fee_budget)
         elif dest_pubkey:
-            result = await lnd.keysend(dest_pubkey, sats, memo or "")
+            result = await lnd.keysend(
+                dest_pubkey, sats, memo or "", preimage=keysend_preimage
+            )
         else:
             raise InvalidInput("Either payment_request or dest_pubkey is required")
     except PaymentFailed as e:
@@ -361,10 +377,16 @@ async def send_payment(
                 metadata=body.metadata,
                 invoice=body.payment_request,
                 dest_pubkey=decoded.destination,
+                payment_hash=decoded.payment_hash,
             )
         if body.dest_pubkey:
             if not body.sats:
                 raise InvalidInput("Keysend requires `sats`")
+            # Pre-generate the preimage so we know the payment_hash up-front.
+            # We pass the SAME preimage to LND so the on-network payment hash
+            # matches what we recorded.
+            preimage = secrets.token_bytes(32)
+            payment_hash = hashlib.sha256(preimage).hexdigest()
             return await _execute_payment(
                 session=session,
                 agent_id=body.agent_id,
@@ -374,6 +396,8 @@ async def send_payment(
                 metadata=body.metadata,
                 invoice=None,
                 dest_pubkey=body.dest_pubkey,
+                payment_hash=payment_hash,
+                keysend_preimage=preimage,
             )
         raise InvalidInput("Either payment_request or dest_pubkey is required")
 
@@ -392,6 +416,7 @@ async def pay(
     async def run() -> ReceiptOut:
         invoice: str | None = None
         dest_pubkey: str | None = None
+        payment_hash: str | None = None
 
         if is_lightning_address(body.to):
             invoice = await resolve_lightning_address_to_invoice(
@@ -411,6 +436,7 @@ async def pay(
                     requested_sats=body.sats,
                 )
             dest_pubkey = decoded.destination
+            payment_hash = decoded.payment_hash
         elif is_bolt11(body.to):
             invoice = body.to
             decoded = await get_lnd().decode_invoice(invoice)
@@ -422,9 +448,11 @@ async def pay(
                     f"`sats`={body.sats}. They must match."
                 )
             dest_pubkey = decoded.destination
+            payment_hash = decoded.payment_hash
         else:
             raise InvalidInput(f"Unsupported destination format: {body.to}")
 
+        assert payment_hash is not None  # set in every branch above
         return await _execute_payment(
             session=session,
             agent_id=body.agent_id,
@@ -434,6 +462,7 @@ async def pay(
             metadata=body.metadata,
             invoice=invoice,
             dest_pubkey=dest_pubkey,
+            payment_hash=payment_hash,
         )
 
     return await _idempotent(request, session, api_key, body, run)

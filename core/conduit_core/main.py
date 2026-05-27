@@ -25,6 +25,7 @@ from .routes import (
 from .services import webhook_sender
 from .services.invoice_watcher import InvoiceWatcher
 from .services.lnd import get_lnd, shutdown_lnd
+from .services.reconciler import PaymentReconciler
 
 
 def _configure_logging(level: str) -> None:
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
 
     lnd = get_lnd()
     watcher: InvoiceWatcher | None = None
+    reconciler: PaymentReconciler | None = None
     # If we're meant to be talking to a real LND, fail fast at boot rather
     # than discovering it on the first payment.
     if not settings.lnd_mock:
@@ -103,9 +105,17 @@ async def lifespan(app: FastAPI):
         await watcher.start()
         app.state.invoice_watcher = watcher
 
+        # Reconciler closes the loop on pending sends whose LND HTTP call
+        # ended in an unknown state. Only meaningful against real LND.
+        reconciler = PaymentReconciler(lnd, SessionLocal)
+        await reconciler.start()
+        app.state.payment_reconciler = reconciler
+
     try:
         yield
     finally:
+        if reconciler is not None:
+            await reconciler.stop()
         if watcher is not None:
             await watcher.stop()
         # Drain in-flight webhook deliveries before shutting LND down.

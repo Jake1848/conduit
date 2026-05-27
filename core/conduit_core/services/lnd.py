@@ -110,6 +110,24 @@ class InvoiceUpdate:
     settled_at: datetime | None = None
 
 
+@dataclass
+class PaymentLookup:
+    """The result of `lookup_payment(hash)` — used by the reconciler.
+
+    `status` mirrors LND's payment status enum:
+      SUCCEEDED   — payment confirmed settled on the Lightning Network
+      FAILED      — payment definitively failed
+      IN_FLIGHT   — still being attempted; check again later
+      UNKNOWN     — LND has no record of this hash (never sent, or wiped)
+    """
+
+    status: str
+    payment_hash: str
+    fee_sats: int = 0
+    payment_preimage: str | None = None
+    failure_reason: str | None = None
+
+
 # ---------- Protocol ----------
 
 class LNDClient(Protocol):
@@ -118,7 +136,15 @@ class LNDClient(Protocol):
     async def create_invoice(self, amount_sats: int, memo: str, expiry: int) -> Invoice: ...
     async def decode_invoice(self, payment_request: str) -> DecodedInvoice: ...
     async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult: ...
-    async def keysend(self, dest_pubkey: str, amount_sats: int, memo: str) -> PaymentResult: ...
+    async def keysend(
+        self,
+        dest_pubkey: str,
+        amount_sats: int,
+        memo: str,
+        *,
+        preimage: bytes | None = None,
+    ) -> PaymentResult: ...
+    async def lookup_payment(self, payment_hash: str) -> PaymentLookup: ...
     def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]: ...
     async def close(self) -> None: ...
 
@@ -222,11 +248,36 @@ class MockLNDClient:
         amount = decoded.amount_sats or 1
         return await self._simulate_payment(decoded.payment_hash, amount)
 
-    async def keysend(self, dest_pubkey: str, amount_sats: int, memo: str) -> PaymentResult:
-        payment_hash = binascii.hexlify(_sha256(secrets.token_bytes(32))).decode()
-        return await self._simulate_payment(payment_hash, amount_sats)
+    async def keysend(
+        self,
+        dest_pubkey: str,
+        amount_sats: int,
+        memo: str,
+        *,
+        preimage: bytes | None = None,
+    ) -> PaymentResult:
+        if preimage is None:
+            preimage = secrets.token_bytes(32)
+        payment_hash = binascii.hexlify(_sha256(preimage)).decode()
+        return await self._simulate_payment(payment_hash, amount_sats, preimage)
 
-    async def _simulate_payment(self, payment_hash: str, amount_sats: int) -> PaymentResult:
+    async def lookup_payment(self, payment_hash: str) -> PaymentLookup:
+        for p in self._state.payments:
+            if p.payment_hash == payment_hash:
+                return PaymentLookup(
+                    status="SUCCEEDED",
+                    payment_hash=payment_hash,
+                    fee_sats=p.fee_sats,
+                    payment_preimage=p.payment_preimage,
+                )
+        return PaymentLookup(status="UNKNOWN", payment_hash=payment_hash)
+
+    async def _simulate_payment(
+        self,
+        payment_hash: str,
+        amount_sats: int,
+        preimage: bytes | None = None,
+    ) -> PaymentResult:
         start = time.perf_counter()
         # Simulate ~30–80ms Lightning settlement.
         await asyncio.sleep(0.03 + secrets.randbelow(50) / 1000)
@@ -241,7 +292,9 @@ class MockLNDClient:
             self._state.channel_remote_sats += amount_sats
             result = PaymentResult(
                 payment_hash=payment_hash,
-                payment_preimage=secrets.token_hex(32),
+                payment_preimage=(
+                    binascii.hexlify(preimage).decode() if preimage else secrets.token_hex(32)
+                ),
                 amount_sats=amount_sats,
                 fee_sats=fee,
                 latency_ms=int((time.perf_counter() - start) * 1000),
@@ -351,8 +404,16 @@ class LNDRestClient:
         )
         return self._parse_payment(data, start)
 
-    async def keysend(self, dest_pubkey: str, amount_sats: int, memo: str) -> PaymentResult:
-        preimage = secrets.token_bytes(32)
+    async def keysend(
+        self,
+        dest_pubkey: str,
+        amount_sats: int,
+        memo: str,
+        *,
+        preimage: bytes | None = None,
+    ) -> PaymentResult:
+        if preimage is None:
+            preimage = secrets.token_bytes(32)
         payment_hash = _sha256(preimage)
         start = time.perf_counter()
         dest_custom_records = {"5482373484": _b64(preimage)}
@@ -372,6 +433,45 @@ class LNDRestClient:
             },
         )
         return self._parse_payment(data, start)
+
+    async def lookup_payment(self, payment_hash: str) -> PaymentLookup:
+        """Ask LND for the state of a payment by hash.
+
+        Uses `/v2/router/track/{hash}?no_inflight_updates=true` — that stream
+        only emits TERMINAL events (SUCCEEDED, FAILED), so a short read
+        timeout that fires while the stream is open means the payment is
+        still in-flight and we should retry on the next sweep.
+        """
+        import json as _json
+
+        url = self._base + f"/v2/router/track/{payment_hash}?no_inflight_updates=true"
+        timeout = httpx.Timeout(read=5.0, connect=5.0, write=5.0, pool=5.0)
+        try:
+            async with self._client.stream("GET", url, timeout=timeout) as r:
+                if r.status_code == 404:
+                    return PaymentLookup(status="UNKNOWN", payment_hash=payment_hash)
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parsed = _json.loads(line)
+                    evt = parsed.get("result", parsed)
+                    return PaymentLookup(
+                        status=str(evt.get("status", "UNKNOWN")),
+                        payment_hash=payment_hash,
+                        fee_sats=int(evt.get("fee_sat", 0)),
+                        payment_preimage=evt.get("payment_preimage"),
+                        failure_reason=evt.get("failure_reason"),
+                    )
+            return PaymentLookup(status="UNKNOWN", payment_hash=payment_hash)
+        except httpx.ReadTimeout:
+            # Stream stayed open past the short timeout → still in flight.
+            return PaymentLookup(status="IN_FLIGHT", payment_hash=payment_hash)
+        except httpx.HTTPError as e:
+            raise LNDError(
+                f"lookup_payment({payment_hash}) failed: {e}"
+            ) from e
 
     def _parse_payment(self, data: dict[str, Any], start: float) -> PaymentResult:
         status = data.get("status", "UNKNOWN")
