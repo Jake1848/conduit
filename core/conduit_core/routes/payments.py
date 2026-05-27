@@ -139,7 +139,7 @@ async def _execute_payment(
         else:
             raise InvalidInput("Either payment_request or dest_pubkey is required")
     except PaymentFailed as e:
-        # ----- Phase 3a: failure → refund the full debit -----
+        # ----- Phase 3a: definite failure → refund the full debit -----
         try:
             refund_agent = (
                 await session.execute(
@@ -166,6 +166,42 @@ async def _execute_payment(
             },
         )
         raise
+    except Exception as e:  # noqa: BLE001
+        # ----- Phase 3c: UNKNOWN state — don't refund.
+        # The payment may have actually settled on LND while our HTTP call
+        # failed (timeout, 5xx, parse error, lost connection, etc.). Refunding
+        # here would let the agent spend twice — once via the in-flight LND
+        # settlement and once via the refunded balance. We mark the row with
+        # a reconciliation marker and surface a clear error.
+        log.critical(
+            "payment_unknown_state",
+            tx_id=tx_id_local,
+            agent_id=agent_id,
+            sats=sats,
+            destination=destination,
+            error_type=type(e).__name__,
+            error=str(e),
+            exc_info=True,
+        )
+        try:
+            unknown_tx = await session.get(Transaction, tx_id_local)
+            if unknown_tx is not None:
+                unknown_tx.failure_reason = (
+                    f"needs_reconciliation: {type(e).__name__}: {e}"
+                )
+                await session.commit()
+        except Exception:
+            await session.rollback()
+        raise PaymentFailed(
+            "Payment to LND ended in an UNKNOWN state — the Lightning payment "
+            "may or may not have settled. Balance has NOT been refunded to "
+            "prevent double-spend. Reconcile transaction "
+            f"{tx_id_local} (call LND `lookuppayment`) before issuing a new "
+            f"payment to the same destination. Underlying error: {type(e).__name__}: {e}",
+            transaction_id=tx_id_local,
+            needs_reconciliation=True,
+            underlying_error=type(e).__name__,
+        ) from e
 
     # ----- Phase 3b: success → reconcile fee budget vs actual fee -----
     actual_fee = max(0, int(result.fee_sats))
@@ -216,6 +252,35 @@ async def _execute_payment(
     )
 
 
+def _resolve_bolt11_amount(decoded_amount_sats: int, requested_sats: int | None) -> int:
+    """Determine the authoritative payment amount for a BOLT11 invoice.
+
+    SECURITY: a BOLT11 invoice has an embedded amount. The caller may also
+    supply `sats`. We do NOT silently prefer one over the other — that's
+    how an attacker pays a 1,000,000-sat invoice with a 1-sat budget. The
+    only safe behaviors are:
+
+      - Fixed-amount invoice + no `sats` provided  → use the invoice amount.
+      - Fixed-amount invoice + `sats` matches      → use the invoice amount.
+      - Fixed-amount invoice + `sats` differs      → REJECT.
+      - Zero-amount invoice + `sats` provided      → use `sats`.
+      - Zero-amount invoice + no `sats`            → REJECT.
+    """
+    if decoded_amount_sats > 0:
+        if requested_sats is not None and requested_sats != decoded_amount_sats:
+            raise InvalidInput(
+                f"Invoice amount ({decoded_amount_sats} sats) does not match the "
+                f"requested `sats` ({requested_sats}). Either omit `sats` or set it "
+                "to the invoice amount.",
+                invoice_amount_sats=decoded_amount_sats,
+                requested_sats=requested_sats,
+            )
+        return decoded_amount_sats
+    if not requested_sats:
+        raise InvalidInput("Zero-amount invoice requires `sats` to be provided")
+    return requested_sats
+
+
 @router.post("/send", response_model=ReceiptOut, status_code=201)
 async def send_payment(
     body: PaymentSendIn,
@@ -226,9 +291,7 @@ async def send_payment(
         if not is_bolt11(body.payment_request):
             raise InvalidInput("payment_request is not a BOLT11 invoice")
         decoded = await get_lnd().decode_invoice(body.payment_request)
-        sats = body.sats or decoded.amount_sats
-        if not sats:
-            raise InvalidInput("Zero-amount invoice requires `sats` to be provided")
+        sats = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
         return await _execute_payment(
             session=session,
             agent_id=body.agent_id,
@@ -268,10 +331,30 @@ async def pay(
     if is_lightning_address(body.to):
         invoice = await resolve_lightning_address_to_invoice(body.to, body.sats, body.memo)
         decoded = await get_lnd().decode_invoice(invoice)
+        # SECURITY: LNURL-pay servers can return an invoice for a different
+        # amount than we asked for. Refuse to pay anything other than what
+        # the caller authorized.
+        if decoded.amount_sats > 0 and decoded.amount_sats != body.sats:
+            raise PaymentFailed(
+                f"Lightning address {body.to} returned an invoice for "
+                f"{decoded.amount_sats} sats but we requested {body.sats}. "
+                "Refusing to pay — verify the destination.",
+                lightning_address=body.to,
+                invoice_amount_sats=decoded.amount_sats,
+                requested_sats=body.sats,
+            )
         dest_pubkey = decoded.destination
     elif is_bolt11(body.to):
         invoice = body.to
         decoded = await get_lnd().decode_invoice(invoice)
+        # Same defense as /send for BOLT11 — body.sats must match the embedded
+        # amount if both are present.
+        sats_to_use = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
+        if sats_to_use != body.sats:
+            raise InvalidInput(
+                f"`to` is a BOLT11 invoice for {decoded.amount_sats} sats but "
+                f"`sats`={body.sats}. They must match."
+            )
         dest_pubkey = decoded.destination
     else:
         raise InvalidInput(f"Unsupported destination format: {body.to}")

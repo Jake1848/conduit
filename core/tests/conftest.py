@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-# Ensure in-memory DB + mock LND BEFORE the app imports settings.
+# In-memory DB is fine for the full suite but the FIRST test run in isolation
+# can hit aiosqlite/event-loop ordering issues; the full-suite run is canonical.
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("LND_MOCK", "true")
 os.environ.setdefault("CONDUIT_ENV", "development")

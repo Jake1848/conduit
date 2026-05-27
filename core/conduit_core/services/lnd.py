@@ -332,17 +332,22 @@ class LNDRestClient:
             expiry=int(data.get("expiry", 3600)),
         )
 
+    # Router endpoints stream ndjson and don't close the connection until
+    # the payment terminates. LND_PAYMENT_TIMEOUT_SECONDS is LND's own
+    # timeout; we add a buffer to the HTTP read timeout so we wait for LND
+    # to make a decision rather than racing it.
+    LND_PAYMENT_TIMEOUT_SECONDS = 60
+
     async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult:
         start = time.perf_counter()
-        data = await self._post(
+        data = await self._post_streaming(
             "/v2/router/send",
             {
                 "payment_request": payment_request,
-                "timeout_seconds": 60,
+                "timeout_seconds": self.LND_PAYMENT_TIMEOUT_SECONDS,
                 "fee_limit_sat": max_fee_sats,
                 "no_inflight_updates": True,
             },
-            stream=True,
         )
         return self._parse_payment(data, start)
 
@@ -354,18 +359,17 @@ class LNDRestClient:
         if memo:
             # Custom record 34349334 is used by some wallets for keysend messages.
             dest_custom_records["34349334"] = _b64(memo.encode())
-        data = await self._post(
+        data = await self._post_streaming(
             "/v2/router/send",
             {
                 "dest": _b64(bytes.fromhex(dest_pubkey)),
                 "amt": amount_sats,
                 "payment_hash": _b64(payment_hash),
-                "timeout_seconds": 60,
+                "timeout_seconds": self.LND_PAYMENT_TIMEOUT_SECONDS,
                 "fee_limit_sat": max(1, amount_sats // 100),
                 "dest_custom_records": dest_custom_records,
                 "no_inflight_updates": True,
             },
-            stream=True,
         )
         return self._parse_payment(data, start)
 
@@ -393,27 +397,46 @@ class LNDRestClient:
         except httpx.HTTPError as e:
             raise LNDError(f"LND GET {path} failed: {e}") from e
 
-    async def _post(
-        self, path: str, body: dict[str, Any], *, stream: bool = False
-    ) -> dict[str, Any]:
-        import json as _json
-
+    async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
             r = await self._client.post(self._base + path, json=body)
             r.raise_for_status()
-            if stream:
-                # Router streaming endpoints return ndjson; take the final event.
-                last: dict[str, Any] = {}
-                for line in r.text.splitlines():
+            return r.json()
+        except httpx.HTTPError as e:
+            raise LNDError(f"LND POST {path} failed: {e}") from e
+
+    async def _post_streaming(
+        self, path: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """POST to a router-style streaming endpoint and return the last ndjson event.
+
+        LND's `/v2/router/send` keeps the connection open until the payment
+        terminates (success / failure / timeout). The HTTP read timeout MUST
+        exceed LND's own `timeout_seconds` or we'll surface a `ReadTimeout`
+        as `LNDError` while LND still has the payment in-flight — which the
+        payment route correctly treats as an UNKNOWN state, but the operator
+        will see a wave of needs-reconciliation alerts for what should have
+        been straightforward sends.
+        """
+        import json as _json
+
+        read_timeout = self.LND_PAYMENT_TIMEOUT_SECONDS + 30
+        timeout = httpx.Timeout(read=read_timeout, connect=5.0, write=10.0, pool=5.0)
+        last: dict[str, Any] = {}
+        try:
+            async with self._client.stream(
+                "POST", self._base + path, json=body, timeout=timeout
+            ) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
                     line = line.strip()
                     if not line:
                         continue
                     parsed = _json.loads(line)
                     last = parsed.get("result", parsed)
-                return last or {}
-            return r.json()
         except httpx.HTTPError as e:
-            raise LNDError(f"LND POST {path} failed: {e}") from e
+            raise LNDError(f"LND POST (stream) {path} failed: {e}") from e
+        return last or {}
 
     async def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]:
         """Stream invoice state changes from LND's `/v1/invoices/subscribe`.
