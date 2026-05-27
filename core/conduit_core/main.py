@@ -22,6 +22,7 @@ from .routes import (
     transactions,
     webhooks,
 )
+from .services.invoice_watcher import InvoiceWatcher
 from .services.lnd import get_lnd, shutdown_lnd
 
 
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
         await ensure_bootstrap_key(s)
 
     lnd = get_lnd()
+    watcher: InvoiceWatcher | None = None
     # If we're meant to be talking to a real LND, fail fast at boot rather
     # than discovering it on the first payment.
     if not settings.lnd_mock:
@@ -94,9 +96,17 @@ async def lifespan(app: FastAPI):
                 "and that LND is unlocked."
             ) from e
 
+        # Start the invoice settlement watcher — only with real LND. In mock
+        # mode there's no stream to read; tests drive process_update() directly.
+        watcher = InvoiceWatcher(lnd, SessionLocal)
+        await watcher.start()
+        app.state.invoice_watcher = watcher
+
     try:
         yield
     finally:
+        if watcher is not None:
+            await watcher.stop()
         await shutdown_lnd()
         log.info("conduit_stopped")
 

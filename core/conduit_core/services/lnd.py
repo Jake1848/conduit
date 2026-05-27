@@ -18,6 +18,7 @@ import binascii
 import secrets
 import ssl
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -94,6 +95,21 @@ class DecodedInvoice:
     expiry: int
 
 
+@dataclass
+class InvoiceUpdate:
+    """Emitted by `subscribe_invoices()` on every invoice state change.
+
+    `state` mirrors LND's enum: OPEN | SETTLED | CANCELED | ACCEPTED.
+    `amount_sats` is the amount actually received (`amt_paid_sat` from LND),
+    which can exceed the original invoice amount on AMP payments.
+    """
+
+    payment_hash: str
+    amount_sats: int
+    state: str
+    settled_at: datetime | None = None
+
+
 # ---------- Protocol ----------
 
 class LNDClient(Protocol):
@@ -103,6 +119,7 @@ class LNDClient(Protocol):
     async def decode_invoice(self, payment_request: str) -> DecodedInvoice: ...
     async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult: ...
     async def keysend(self, dest_pubkey: str, amount_sats: int, memo: str) -> PaymentResult: ...
+    def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]: ...
     async def close(self) -> None: ...
 
 
@@ -232,6 +249,17 @@ class MockLNDClient:
             )
             self._state.payments.append(result)
             return result
+
+    async def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]:
+        """No-op stream in mock mode.
+
+        The InvoiceWatcher in tests drives `process_update()` directly with
+        synthetic InvoiceUpdate objects, so the mock doesn't need to emit
+        anything from the subscribe path.
+        """
+        # Yield nothing, then exit. Marked async-iterator via the bare-yield trick.
+        if False:  # pragma: no cover
+            yield InvoiceUpdate(payment_hash="", amount_sats=0, state="OPEN")
 
     async def close(self) -> None:
         return None
@@ -387,8 +415,52 @@ class LNDRestClient:
         except httpx.HTTPError as e:
             raise LNDError(f"LND POST {path} failed: {e}") from e
 
+    async def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]:
+        """Stream invoice state changes from LND's `/v1/invoices/subscribe`.
+
+        LND returns newline-delimited JSON; each line is `{"result": <invoice>}`.
+        We translate that into InvoiceUpdate objects. The caller is responsible
+        for reconnection (see InvoiceWatcher) — if the stream disconnects, this
+        method just stops yielding and returns.
+        """
+        import json as _json
+
+        url = self._base + "/v1/invoices/subscribe"
+        async with self._client.stream("GET", url) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parsed = _json.loads(line)
+                except _json.JSONDecodeError:
+                    log.warning("lnd_subscribe_invoices_bad_line", line=line[:200])
+                    continue
+                inv = parsed.get("result", parsed)
+                if not inv:
+                    continue
+                yield _decode_invoice_update(inv)
+
     async def close(self) -> None:
         await self._client.aclose()
+
+
+def _decode_invoice_update(inv: dict[str, Any]) -> InvoiceUpdate:
+    settle_date_raw = inv.get("settle_date") or "0"
+    try:
+        settle_ts = int(settle_date_raw)
+    except (TypeError, ValueError):
+        settle_ts = 0
+    settled_at: datetime | None = None
+    if settle_ts > 0:
+        settled_at = datetime.fromtimestamp(settle_ts, tz=UTC)
+    return InvoiceUpdate(
+        payment_hash=_b64_to_hex(inv.get("r_hash", "")) if inv.get("r_hash") else "",
+        amount_sats=int(inv.get("amt_paid_sat") or inv.get("value") or 0),
+        state=str(inv.get("state", "OPEN")),
+        settled_at=settled_at,
+    )
 
 
 # ---------- helpers ----------

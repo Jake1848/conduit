@@ -1,12 +1,12 @@
 import json
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_scope
 from ..db import get_session
-from ..db.models import Agent, Policy
+from ..db.models import Agent, Policy, Transaction
 from ..errors import AgentNotFound, InsufficientBalance, InvalidInput
 from ..schemas import (
     AgentCreate,
@@ -109,13 +109,29 @@ async def get_balance(
     agent = await session.get(Agent, agent_id)
     if agent is None:
         raise AgentNotFound(f"No agent with id {agent_id}")
-    # Per-agent virtual balance (see ledger.py). The node balance is reported
-    # separately at /v1/status and is the upper bound on the aggregate.
+
+    # `available_sats` = balance the agent can spend right now. Already net of
+    # any in-flight debits (the payment route debits before going pending).
+    # `pending_sats` = sats currently held in pending outbound HTLCs; if they
+    # all fail and refund, the agent gets these back.
+    pending_row = await session.execute(
+        select(
+            func.coalesce(
+                func.sum(Transaction.amount_sats + Transaction.fee_sats), 0
+            )
+        ).where(
+            Transaction.agent_id == agent_id,
+            Transaction.direction == "send",
+            Transaction.status == "pending",
+        )
+    )
+    pending_sats = int(pending_row.scalar_one() or 0)
+    available = agent.balance_sats or 0
     return BalanceOut(
         agent_id=agent_id,
-        available_sats=agent.balance_sats or 0,
-        pending_sats=0,
-        total_sats=agent.balance_sats or 0,
+        available_sats=available,
+        pending_sats=pending_sats,
+        total_sats=available + pending_sats,
     )
 
 

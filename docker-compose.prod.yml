@@ -1,0 +1,85 @@
+# Production docker-compose stack.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Required env (see .env.prod.example):
+#   POSTGRES_PASSWORD, API_SECRET_KEY, BOOTSTRAP_API_KEY, ALLOWED_ORIGINS,
+#   LND_REST_URL (defaults to host's LND on port 8080)
+#
+# LND is NOT in this stack — it runs separately on the host or on a different
+# compose project. The api service reaches LND via host.docker.internal which
+# is mapped to the host gateway on Linux. Mount the macaroon + TLS cert from
+# ./secrets/ (read-only).
+#
+# Run alembic migrations on every boot via core/entrypoint.sh.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: conduit-postgres
+    environment:
+      POSTGRES_USER: conduit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: conduit
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "conduit"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # No published port — Postgres is only reachable from inside the compose net.
+
+  api:
+    build:
+      context: ./core
+    image: conduit/core:prod
+    container_name: conduit-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CONDUIT_ENV: production
+      CONDUIT_NETWORK: ${CONDUIT_NETWORK:-mainnet}
+      DATABASE_URL: postgresql+asyncpg://conduit:${POSTGRES_PASSWORD}@postgres:5432/conduit
+      API_SECRET_KEY: ${API_SECRET_KEY:?API_SECRET_KEY is required}
+      BOOTSTRAP_API_KEY: ${BOOTSTRAP_API_KEY:?BOOTSTRAP_API_KEY is required}
+      LND_MOCK: "false"
+      LND_REST_URL: ${LND_REST_URL:-https://host.docker.internal:8080}
+      LND_MACAROON_PATH: /lnd/admin.macaroon
+      LND_TLS_CERT_PATH: /lnd/tls.cert
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./secrets/admin.macaroon:/lnd/admin.macaroon:ro
+      - ./secrets/tls.cert:/lnd/tls.cert:ro
+    # Required so LND on the host is reachable as host.docker.internal on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["./entrypoint.sh"]
+    restart: unless-stopped
+    # Published only to localhost — nginx terminates TLS in front of it.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: conduit-nginx
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Production nginx config (proxies to the api service by name, expects
+      # certbot-managed certs in /etc/letsencrypt on the host).
+      - ./infra/nginx/conduit.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  certbot-webroot:

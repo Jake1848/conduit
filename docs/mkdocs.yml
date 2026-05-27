@@ -21,6 +21,7 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Production: production.md
   - Concepts:
       - Agents: concepts/agents.md
       - Policies: concepts/policies.md

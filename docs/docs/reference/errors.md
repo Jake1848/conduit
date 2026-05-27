@@ -33,4 +33,5 @@ Every Conduit error response has this shape:
 | `INSUFFICIENT_BALANCE`           | 402 | wallet balance too low for the payment |
 | `PAYMENT_FAILED`                 | 502 | Lightning Network rejected the payment (no route, htlc expired, etc.) |
 | `LND_ERROR`                      | 502 | the upstream LND node failed |
-| `RATE_LIMITED`                   | 429 | too many requests to the API itself |
+| `RATE_LIMITED`                   | 429 | too many requests to the API itself; see `Retry-After` header |
+| `INTERNAL_ERROR`                 | 500 | unhandled server-side error; the incident is logged |
