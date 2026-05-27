@@ -200,3 +200,17 @@ class APIKeyOut(BaseModel):
     scope: Scope
     secret: str | None = Field(None, description="Shown exactly once at creation")
     created_at: datetime
+
+
+class APIKeyListItem(BaseModel):
+    id: str
+    label: str
+    scope: Scope
+    prefix: str
+    created_at: datetime
+    last_used_at: datetime | None
+    revoked: bool
+
+
+class APIKeyListOut(BaseModel):
+    data: list[APIKeyListItem]

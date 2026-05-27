@@ -32,6 +32,10 @@ def api_key_id() -> str:
     return f"key_{_rand(20)}"
 
 
+def idempotency_id() -> str:
+    return f"idr_{_rand(24)}"
+
+
 def api_key_secret(prefix: str) -> str:
     """Return a fresh API key string. The full string is shown once to the operator."""
     return f"{prefix}{secrets.token_urlsafe(32).replace('-', '').replace('_', '')[:40]}"

@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import Agent, Transaction
 from .lnd import InvoiceUpdate, LNDClient
-from .webhook_sender import deliver
+from .webhook_sender import fire as fire_webhook
 
 log = structlog.get_logger(__name__)
 
@@ -160,8 +160,7 @@ class InvoiceWatcher:
         tx.settled_at = update.settled_at or datetime.now(UTC)
         await session.commit()
 
-        await deliver(
-            session,
+        fire_webhook(
             "invoice.settled",
             {
                 "transaction_id": tx.id,
@@ -182,8 +181,7 @@ class InvoiceWatcher:
         tx.status = "failed"
         tx.failure_reason = "invoice expired or canceled"
         await session.commit()
-        await deliver(
-            session,
+        fire_webhook(
             "invoice.expired",
             {
                 "transaction_id": tx.id,

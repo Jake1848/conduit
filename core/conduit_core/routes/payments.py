@@ -1,22 +1,27 @@
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_scope
 from ..db import get_session
-from ..db.models import Agent, Policy, Transaction
+from ..db.models import Agent, APIKey, Policy, Transaction
 from ..errors import (
     AgentNotFound,
+    ConduitError,
     InsufficientBalance,
     InvalidInput,
     PaymentFailed,
     PolicyViolation,
 )
 from ..schemas import PaymentPayIn, PaymentSendIn, ReceiptOut
+from ..services import idempotency
 from ..services.ids import tx_id as new_tx_id
 from ..services.lnd import get_lnd
 from ..services.policy_engine import PaymentRequest, PolicyEngine
@@ -25,10 +30,65 @@ from ..services.wallet import (
     is_lightning_address,
     resolve_lightning_address_to_invoice,
 )
-from ..services.webhook_sender import deliver
+from ..services.webhook_sender import fire as fire_webhook
 
 router = APIRouter(prefix="/v1/payments", tags=["payments"])
 log = structlog.get_logger(__name__)
+
+
+async def _idempotent(
+    request: Request,
+    session: AsyncSession,
+    api_key: APIKey,
+    body: BaseModel,
+    run: Any,  # callable returning a ReceiptOut
+):
+    """Wrap a payment handler with idempotency-key caching.
+
+    If the caller sent `Idempotency-Key`, we cache the response (success
+    OR failure) so a retry returns the same outcome without re-executing.
+    """
+    idem_key = request.headers.get("Idempotency-Key", "")
+    if not idem_key.strip():
+        return await run()
+
+    # Read api_key.id NOW (eagerly to a local string). Once a payment
+    # raises and the request session is rolled back, accessing detached
+    # ORM attributes triggers a lazy load → MissingGreenlet from aiosqlite.
+    api_key_id = api_key.id
+
+    key = idempotency.validate_key(idem_key)
+    request_hash = idempotency.hash_payload(body)
+
+    cached = await idempotency.lookup(session, api_key_id, key, request_hash)
+    if cached is not None:
+        return JSONResponse(content=cached.body, status_code=cached.status_code)
+
+    try:
+        receipt = await run()
+    except ConduitError as e:
+        # Cache failure responses too — Stripe-style. Otherwise a flapping
+        # network would let retries hit the live execution path repeatedly.
+        await idempotency.store(
+            session,
+            api_key_id,
+            key,
+            request_hash,
+            status_code=e.status_code,
+            body={"detail": e.detail},
+        )
+        raise
+
+    payload = receipt.model_dump(mode="json") if isinstance(receipt, BaseModel) else receipt
+    await idempotency.store(
+        session,
+        api_key_id,
+        key,
+        request_hash,
+        status_code=201,
+        body=payload,
+    )
+    return receipt
 
 
 def _estimate_max_fee_sats(sats: int) -> int:
@@ -155,8 +215,7 @@ async def _execute_payment(
         except Exception:
             await session.rollback()
             raise
-        await deliver(
-            session,
+        fire_webhook(
             "payment.failed",
             {
                 "transaction_id": tx_id_local,
@@ -227,8 +286,7 @@ async def _execute_payment(
         await session.rollback()
         raise
 
-    await deliver(
-        session,
+    fire_webhook(
         "payment.settled",
         {
             "transaction_id": tx_id_local,
@@ -281,94 +339,104 @@ def _resolve_bolt11_amount(decoded_amount_sats: int, requested_sats: int | None)
     return requested_sats
 
 
-@router.post("/send", response_model=ReceiptOut, status_code=201)
+@router.post("/send", status_code=201)
 async def send_payment(
     body: PaymentSendIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
-    _=Depends(require_scope("write")),
-) -> ReceiptOut:
-    if body.payment_request:
-        if not is_bolt11(body.payment_request):
-            raise InvalidInput("payment_request is not a BOLT11 invoice")
-        decoded = await get_lnd().decode_invoice(body.payment_request)
-        sats = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
-        return await _execute_payment(
-            session=session,
-            agent_id=body.agent_id,
-            sats=sats,
-            destination=body.payment_request,
-            memo=body.memo,
-            metadata=body.metadata,
-            invoice=body.payment_request,
-            dest_pubkey=decoded.destination,
-        )
-    if body.dest_pubkey:
-        if not body.sats:
-            raise InvalidInput("Keysend requires `sats`")
+    api_key: APIKey = Depends(require_scope("write")),
+):
+    async def run() -> ReceiptOut:
+        if body.payment_request:
+            if not is_bolt11(body.payment_request):
+                raise InvalidInput("payment_request is not a BOLT11 invoice")
+            decoded = await get_lnd().decode_invoice(body.payment_request)
+            sats = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
+            return await _execute_payment(
+                session=session,
+                agent_id=body.agent_id,
+                sats=sats,
+                destination=body.payment_request,
+                memo=body.memo,
+                metadata=body.metadata,
+                invoice=body.payment_request,
+                dest_pubkey=decoded.destination,
+            )
+        if body.dest_pubkey:
+            if not body.sats:
+                raise InvalidInput("Keysend requires `sats`")
+            return await _execute_payment(
+                session=session,
+                agent_id=body.agent_id,
+                sats=body.sats,
+                destination=body.dest_pubkey,
+                memo=body.memo,
+                metadata=body.metadata,
+                invoice=None,
+                dest_pubkey=body.dest_pubkey,
+            )
+        raise InvalidInput("Either payment_request or dest_pubkey is required")
+
+    return await _idempotent(request, session, api_key, body, run)
+
+
+@router.post("/pay", status_code=201)
+async def pay(
+    body: PaymentPayIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    api_key: APIKey = Depends(require_scope("write")),
+):
+    """Pay a Lightning address (`name@host`) or a BOLT11 invoice."""
+
+    async def run() -> ReceiptOut:
+        invoice: str | None = None
+        dest_pubkey: str | None = None
+
+        if is_lightning_address(body.to):
+            invoice = await resolve_lightning_address_to_invoice(
+                body.to, body.sats, body.memo
+            )
+            decoded = await get_lnd().decode_invoice(invoice)
+            # SECURITY: LNURL-pay servers can return an invoice for a different
+            # amount than we asked for. Refuse to pay anything other than what
+            # the caller authorized.
+            if decoded.amount_sats > 0 and decoded.amount_sats != body.sats:
+                raise PaymentFailed(
+                    f"Lightning address {body.to} returned an invoice for "
+                    f"{decoded.amount_sats} sats but we requested {body.sats}. "
+                    "Refusing to pay — verify the destination.",
+                    lightning_address=body.to,
+                    invoice_amount_sats=decoded.amount_sats,
+                    requested_sats=body.sats,
+                )
+            dest_pubkey = decoded.destination
+        elif is_bolt11(body.to):
+            invoice = body.to
+            decoded = await get_lnd().decode_invoice(invoice)
+            # Same defense as /send for BOLT11.
+            sats_to_use = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
+            if sats_to_use != body.sats:
+                raise InvalidInput(
+                    f"`to` is a BOLT11 invoice for {decoded.amount_sats} sats but "
+                    f"`sats`={body.sats}. They must match."
+                )
+            dest_pubkey = decoded.destination
+        else:
+            raise InvalidInput(f"Unsupported destination format: {body.to}")
+
         return await _execute_payment(
             session=session,
             agent_id=body.agent_id,
             sats=body.sats,
-            destination=body.dest_pubkey,
+            destination=body.to,
             memo=body.memo,
             metadata=body.metadata,
-            invoice=None,
-            dest_pubkey=body.dest_pubkey,
+            invoice=invoice,
+            dest_pubkey=dest_pubkey,
         )
-    raise InvalidInput("Either payment_request or dest_pubkey is required")
 
-
-@router.post("/pay", response_model=ReceiptOut, status_code=201)
-async def pay(
-    body: PaymentPayIn,
-    session: AsyncSession = Depends(get_session),
-    _=Depends(require_scope("write")),
-) -> ReceiptOut:
-    """Pay a Lightning address (`name@host`) or a BOLT11 invoice."""
-    invoice: str | None = None
-    dest_pubkey: str | None = None
-
-    if is_lightning_address(body.to):
-        invoice = await resolve_lightning_address_to_invoice(body.to, body.sats, body.memo)
-        decoded = await get_lnd().decode_invoice(invoice)
-        # SECURITY: LNURL-pay servers can return an invoice for a different
-        # amount than we asked for. Refuse to pay anything other than what
-        # the caller authorized.
-        if decoded.amount_sats > 0 and decoded.amount_sats != body.sats:
-            raise PaymentFailed(
-                f"Lightning address {body.to} returned an invoice for "
-                f"{decoded.amount_sats} sats but we requested {body.sats}. "
-                "Refusing to pay — verify the destination.",
-                lightning_address=body.to,
-                invoice_amount_sats=decoded.amount_sats,
-                requested_sats=body.sats,
-            )
-        dest_pubkey = decoded.destination
-    elif is_bolt11(body.to):
-        invoice = body.to
-        decoded = await get_lnd().decode_invoice(invoice)
-        # Same defense as /send for BOLT11 — body.sats must match the embedded
-        # amount if both are present.
-        sats_to_use = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
-        if sats_to_use != body.sats:
-            raise InvalidInput(
-                f"`to` is a BOLT11 invoice for {decoded.amount_sats} sats but "
-                f"`sats`={body.sats}. They must match."
-            )
-        dest_pubkey = decoded.destination
-    else:
-        raise InvalidInput(f"Unsupported destination format: {body.to}")
-
-    return await _execute_payment(
-        session=session,
-        agent_id=body.agent_id,
-        sats=body.sats,
-        destination=body.to,
-        memo=body.memo,
-        metadata=body.metadata,
-        invoice=invoice,
-        dest_pubkey=dest_pubkey,
-    )
+    return await _idempotent(request, session, api_key, body, run)
 
 
 @router.get("/{payment_id}", response_model=ReceiptOut)

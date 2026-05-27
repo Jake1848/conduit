@@ -30,11 +30,11 @@ async def test_settled_invoice_credits_agent_and_fires_webhook(client, monkeypat
     # Capture webhook deliveries instead of sending them.
     delivered: list[tuple[str, dict]] = []
 
-    async def fake_deliver(session, event, payload, **kw):
+    def fake_fire(event, payload):
         delivered.append((event, payload))
 
     monkeypatch.setattr(
-        "conduit_core.services.invoice_watcher.deliver", fake_deliver
+        "conduit_core.services.invoice_watcher.fire_webhook", fake_fire
     )
 
     watcher = InvoiceWatcher(get_lnd(), SessionLocal)
@@ -81,11 +81,11 @@ async def test_expired_invoice_marks_failed_no_credit(client, monkeypatch):
 
     delivered: list[tuple[str, dict]] = []
 
-    async def fake_deliver(session, event, payload, **kw):
+    def fake_fire(event, payload):
         delivered.append((event, payload))
 
     monkeypatch.setattr(
-        "conduit_core.services.invoice_watcher.deliver", fake_deliver
+        "conduit_core.services.invoice_watcher.fire_webhook", fake_fire
     )
 
     watcher = InvoiceWatcher(get_lnd(), SessionLocal)
@@ -112,11 +112,11 @@ async def test_unknown_payment_hash_is_no_op(client, monkeypatch):
 
     delivered: list[tuple[str, dict]] = []
 
-    async def fake_deliver(session, event, payload, **kw):
+    def fake_fire(event, payload):
         delivered.append((event, payload))
 
     monkeypatch.setattr(
-        "conduit_core.services.invoice_watcher.deliver", fake_deliver
+        "conduit_core.services.invoice_watcher.fire_webhook", fake_fire
     )
 
     watcher = InvoiceWatcher(get_lnd(), SessionLocal)
@@ -141,11 +141,11 @@ async def test_duplicate_settle_does_not_double_credit(client, monkeypatch):
     )
     payment_hash = r.json()["payment_hash"]
 
-    async def noop_deliver(*a, **kw):
+    def noop_fire(*a, **kw):
         return None
 
     monkeypatch.setattr(
-        "conduit_core.services.invoice_watcher.deliver", noop_deliver
+        "conduit_core.services.invoice_watcher.fire_webhook", noop_fire
     )
 
     watcher = InvoiceWatcher(get_lnd(), SessionLocal)

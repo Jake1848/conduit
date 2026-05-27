@@ -60,3 +60,10 @@ class NotFound(ConduitError):
 class LNDError(ConduitError):
     code = "lnd_error"
     http_status = status.HTTP_502_BAD_GATEWAY
+
+
+class IdempotencyConflict(ConduitError):
+    """Same Idempotency-Key reused with a different request body."""
+
+    code = "idempotency_conflict"
+    http_status = status.HTTP_409_CONFLICT

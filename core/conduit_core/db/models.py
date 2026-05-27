@@ -113,5 +113,36 @@ class Webhook(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class IdempotencyRecord(Base):
+    """Caches POST responses keyed by (api_key_id, Idempotency-Key).
+
+    SECURITY: the same key reused with a different request body is rejected
+    with 409 — we never silently return a cached response for a different
+    request. Records have no TTL in v1; storage is cheap and stale records
+    keep retry traffic safely idempotent. A future cleanup job can prune by
+    created_at.
+    """
+
+    __tablename__ = "idempotency_responses"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    api_key_id: Mapped[str] = mapped_column(
+        ForeignKey("api_keys.id"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Unique per (api_key_id, key) — a key is scoped to the API key that
+        # issued it, so two different agents can use the same human-chosen value.
+        Index("ix_idem_key_unique", "api_key_id", "key", unique=True),
+    )
+
+
 Index("ix_tx_agent_created", Transaction.agent_id, Transaction.created_at)
 Index("ix_tx_agent_status", Transaction.agent_id, Transaction.status)

@@ -22,6 +22,7 @@ from .routes import (
     transactions,
     webhooks,
 )
+from .services import webhook_sender
 from .services.invoice_watcher import InvoiceWatcher
 from .services.lnd import get_lnd, shutdown_lnd
 
@@ -107,6 +108,8 @@ async def lifespan(app: FastAPI):
     finally:
         if watcher is not None:
             await watcher.stop()
+        # Drain in-flight webhook deliveries before shutting LND down.
+        await webhook_sender.flush(timeout=10.0)
         await shutdown_lnd()
         log.info("conduit_stopped")
 
