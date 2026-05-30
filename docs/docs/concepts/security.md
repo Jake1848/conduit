@@ -15,6 +15,38 @@ What Conduit defends against, and what it doesn't.
   HMAC-signed with a per-subscription secret. Verify
   `X-Conduit-Signature` before trusting payloads.
 
+## The payment reconciler
+
+A Lightning send has a window where Conduit has told LND to pay but hasn't
+yet heard back. If the call to LND times out or errors in that window,
+Conduit genuinely **does not know** whether the payment settled. Refunding
+blindly would risk a double-spend (the payment may still land on the
+network); not refunding would strand the agent's sats. Conduit resolves this
+deterministically rather than guessing.
+
+On an unknown-state result the payment route:
+
+- leaves the transaction `pending` with a `needs_reconciliation` marker,
+- does **not** refund — the payment may yet settle,
+- records the `payment_hash` so the payment can be looked up later.
+
+A background **reconciler** then closes the loop. It sweeps every **60
+seconds** for pending outbound payments older than **90 seconds** (safely
+past LND's own 60s payment timeout) and asks LND for the real outcome via
+`lookuppayment`:
+
+- **SUCCEEDED** → mark settled, refund any unused fee budget, fire
+  `payment.settled` (with `reconciled: true`).
+- **FAILED** → mark failed, refund the full debit (sats + fee budget), fire
+  `payment.failed` (with `reconciled: true`).
+- **IN_FLIGHT / UNKNOWN** → leave it; the next sweep checks again.
+
+The guarantee: an agent's money is **never permanently lost** to an
+ambiguous network failure — every payment ends up either settled (and the
+agent got what it paid for) or refunded. The only rows needing manual
+attention are legacy ones with no `payment_hash`, which are logged for the
+operator.
+
 ## Out of scope
 
 - **VPS compromise**. If an attacker has root on the LND host, they have

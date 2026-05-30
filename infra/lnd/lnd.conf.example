@@ -16,6 +16,14 @@ listen=0.0.0.0:9735
 rpclisten=127.0.0.1:10009
 restlisten=127.0.0.1:8080
 
+; Auto-unlock the wallet on startup so the node survives an unattended reboot.
+; Store this file with 0600 perms, owned by the conduit user.
+; SECURITY TRADEOFF: anyone who gets root on this VPS also gets the wallet
+; password. ONLY use this if you trust the VPS disk encryption. For high-value
+; nodes prefer a hardware-backed unlock or manual `lncli unlock`.
+; Set it up with: bash scripts/setup_wallet_unlock.sh
+; wallet-unlock-password-file=/home/conduit/.lnd/wallet_password
+
 # Replace VPS_PUBLIC_IP with your Hetzner IP.
 tlsextraip=VPS_PUBLIC_IP
 tlsextradomain=conduit.energy

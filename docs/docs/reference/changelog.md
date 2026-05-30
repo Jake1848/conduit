@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.5.0 — CI + SDK hardening
+
+- **Automatic retries** in both SDKs — 429 / 5xx / network errors, with
+  exponential backoff (1s, 2s, 4s), `Retry-After` honored and capped at
+  60s, and no retries on other 4xx. Configurable `max_retries` /
+  `maxRetries` (default 3).
+- **Idempotency keys** in both SDKs — payment methods auto-generate a
+  UUID4 `Idempotency-Key`, reused across the SDK's own retries so a
+  retried payment can never settle twice. Override via `idempotency_key`
+  / `idempotencyKey`.
+- **Webhook verifiers** — `verify_webhook` / `parse_webhook` (Python) and
+  `verifyWebhook` / `parseWebhook` (TypeScript), constant-time HMAC over
+  the raw body, with a typed `WebhookVerificationError`.
+- **`set_default_client`** added to the Python SDK for parity with the JS
+  `setDefaultClient`; `PermissionDenied` is now exported from the Python
+  package.
+- **CI** (`.github/workflows/ci.yml`) — GitHub Actions runs three parallel
+  jobs on every push and PR: **core** (ruff + pytest + `alembic check` on
+  Python 3.12 and 3.13), **sdk-python** (ruff + pytest on 3.12 and 3.13),
+  and **sdk-js** (`tsc` build + `node --test` on Node 20 and 22).
+
+## 0.4.0 — financial correctness
+
+- **BOLT11 / Lightning-address amount validation** — a payment's `sats`
+  must match the invoice amount; a malicious LNURL-pay server or a
+  mismatched BOLT11 can no longer cause an over-payment.
+- **LND unknown-state handling** — if the call to LND ends ambiguously
+  (timeout, 5xx, parse error), the payment is **not** refunded (it may
+  have settled); the row is marked for reconciliation instead.
+- **Payment reconciler** — a background sweep (every 60s, for pending
+  sends older than 90s) calls LND `lookuppayment` and settles or refunds,
+  so money is never permanently stranded by an ambiguous failure.
+- **Server-side idempotency keys** — `Idempotency-Key` on the payment
+  endpoints; same key + same body replays the cached response, same key +
+  different body returns `409`.
+- **API key revocation** — `GET /v1/api-keys` and
+  `DELETE /v1/api-keys/{id}` (admin); revoked keys return `401`.
+- **Fire-and-forget webhooks** — deliveries are scheduled in the
+  background, so a slow or failing webhook receiver can no longer turn a
+  successful payment into an error or trigger a double-charge on retry.
+- **REST LND streaming** — router payments are streamed with a read
+  timeout above LND's own payment timeout, so a slow payment no longer
+  surfaces as a spurious error.
+
 ## 0.3.0 — invoice watcher + production stack
 
 - **Invoice settlement watcher** — background task subscribes to LND's

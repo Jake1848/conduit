@@ -55,6 +55,43 @@ Or for keysend:
 }
 ```
 
+## Idempotency
+
+Both payment endpoints accept an optional `Idempotency-Key` request header so
+a retried request can never produce a second Lightning payment.
+
+```
+POST /v1/payments/send
+POST /v1/payments/pay
+Idempotency-Key: 7d3f9c1e-1a2b-4c3d-8e5f-0a1b2c3d4e5f
+```
+
+- **Format** — any unique string, **max 200 characters**. A UUID4 is
+  recommended.
+- **Same key + same body** → the original response is returned verbatim
+  (same status and body), without re-executing the payment.
+- **Same key + different body** → `409 Conflict`
+  (`code: IDEMPOTENCY_CONFLICT`). A key is permanently bound to the exact
+  request body it was first used with.
+- **Failure responses are cached too** (Stripe-style). If the first call
+  returned a 4xx/5xx, a retry with the same key replays that same error. A
+  *fix-then-retry* workflow must therefore use a **fresh** key.
+- **Scoped per API key** — the namespace is `(api_key_id, key)`, so two
+  different API keys can use the same idempotency value without colliding.
+- **No expiry** — records are kept permanently, so retries are safe
+  indefinitely.
+
+The Conduit SDKs attach an `Idempotency-Key` automatically on every payment
+(a fresh UUID4 per call, reused across the SDK's own retries). See the
+[Python](../sdk/python.md) and [TypeScript](../sdk/typescript.md) SDK docs
+for the `idempotency_key` / `idempotencyKey` override.
+
+!!! note "Concurrency"
+    Two *simultaneous* requests carrying the same key may both execute (each
+    misses the cache before the other commits). Sequential retries — the
+    common case, and what the SDKs do — are fully protected. Do not fan the
+    same key out across parallel in-flight requests.
+
 ## Get one
 
 `GET /v1/payments/{payment_id}` — requires `read`
