@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,10 @@ from .invoice import Invoice
 from .payment import Receipt, _parse_dt
 from .policy import Policy
 from .transaction import Transaction
+
+
+def _new_idempotency_key() -> str:
+    return str(uuid.uuid4())
 
 
 @dataclass
@@ -99,8 +104,14 @@ class Agent:
         sats: int,
         memo: str | None = None,
         metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> Receipt:
-        """Pay a Lightning address (`name@host`) or a BOLT11 invoice."""
+        """Pay a Lightning address (`name@host`) or a BOLT11 invoice.
+
+        An `Idempotency-Key` is sent automatically (a fresh UUID4 if you don't
+        provide one) so an automatic retry can never double-pay. Pass an
+        explicit `idempotency_key` to make a manual retry idempotent too.
+        """
         data = self._client.post(
             "/v1/payments/pay",
             json={
@@ -110,6 +121,7 @@ class Agent:
                 "memo": memo,
                 "metadata": metadata,
             },
+            idempotency_key=idempotency_key or _new_idempotency_key(),
         )
         return Receipt.from_api(data)
 
@@ -119,6 +131,7 @@ class Agent:
         *,
         sats: int | None = None,
         memo: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Receipt:
         """Pay a BOLT11 invoice (or zero-amount invoice with explicit sats)."""
         data = self._client.post(
@@ -129,10 +142,18 @@ class Agent:
                 "sats": sats,
                 "memo": memo,
             },
+            idempotency_key=idempotency_key or _new_idempotency_key(),
         )
         return Receipt.from_api(data)
 
-    def keysend(self, dest_pubkey: str, sats: int, *, memo: str | None = None) -> Receipt:
+    def keysend(
+        self,
+        dest_pubkey: str,
+        sats: int,
+        *,
+        memo: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> Receipt:
         data = self._client.post(
             "/v1/payments/send",
             json={
@@ -141,6 +162,7 @@ class Agent:
                 "sats": sats,
                 "memo": memo,
             },
+            idempotency_key=idempotency_key or _new_idempotency_key(),
         )
         return Receipt.from_api(data)
 

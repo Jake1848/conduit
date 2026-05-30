@@ -47,6 +47,12 @@ class RateLimited(ConduitError):
     code = "RATE_LIMITED"
 
 
+class WebhookVerificationError(ConduitError):
+    """Raised by parse_webhook when a payload's signature doesn't verify."""
+
+    code = "WEBHOOK_VERIFICATION_ERROR"
+
+
 _CODE_MAP = {
     "AUTHENTICATION_ERROR": AuthenticationError,
     "PERMISSION_DENIED": PermissionDenied,

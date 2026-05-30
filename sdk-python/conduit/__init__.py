@@ -9,20 +9,23 @@
 """
 
 from .agent import Agent
-from .client import Conduit
+from .client import Conduit, default_client, set_default_client
 from .errors import (
     AgentNotFound,
     AuthenticationError,
     ConduitError,
     InsufficientBalance,
     PaymentFailed,
+    PermissionDenied,
     PolicyViolation,
     RateLimited,
+    WebhookVerificationError,
 )
 from .invoice import Invoice
 from .payment import Receipt
 from .policy import Policy
 from .transaction import Transaction
+from .webhook import parse_webhook, verify_webhook
 
 # Module-level config — populated from CONDUIT_API_KEY / CONDUIT_API_URL env vars
 # lazily on first use. See client.py.
@@ -34,17 +37,23 @@ __version__ = "0.1.0"
 __all__ = [
     "Agent",
     "Conduit",
+    "default_client",
+    "set_default_client",
     "Policy",
     "Receipt",
     "Invoice",
     "Transaction",
     "ConduitError",
     "AuthenticationError",
+    "PermissionDenied",
     "PolicyViolation",
     "InsufficientBalance",
     "PaymentFailed",
     "AgentNotFound",
     "RateLimited",
+    "WebhookVerificationError",
+    "verify_webhook",
+    "parse_webhook",
     "api_key",
     "base_url",
     "__version__",

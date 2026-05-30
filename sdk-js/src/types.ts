@@ -66,6 +66,8 @@ export interface PayOptions {
   sats: number;
   memo?: string;
   metadata?: Record<string, unknown>;
+  /** Reuse this key to make a manual retry idempotent. Auto-generated if omitted. */
+  idempotencyKey?: string;
 }
 
 export interface CreateAgentOptions {

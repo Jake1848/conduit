@@ -10,6 +10,18 @@ import type {
   TransactionJSON,
 } from "./types.js";
 
+/** Generate a fresh idempotency key. Prefers Web Crypto (Node 20+ and browsers). */
+function newIdempotencyKey(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  // Fallback for runtimes without Web Crypto (should not happen on Node >= 20).
+  return `idem-${Date.now().toString(16)}-${Math.floor(Math.random() * 1e16).toString(16)}`;
+}
+
+export interface SendOptions {
+  idempotencyKey?: string;
+}
+
 export interface Receipt {
   id: string;
   agentId: string;
@@ -136,33 +148,53 @@ export class Agent {
   }
 
   async pay(opts: PayOptions): Promise<Receipt> {
-    const data = await this.client.post<ReceiptJSON>("/v1/payments/pay", {
-      agent_id: this.id,
-      to: opts.to,
-      sats: opts.sats,
-      memo: opts.memo,
-      metadata: opts.metadata,
-    });
+    const data = await this.client.post<ReceiptJSON>(
+      "/v1/payments/pay",
+      {
+        agent_id: this.id,
+        to: opts.to,
+        sats: opts.sats,
+        memo: opts.memo,
+        metadata: opts.metadata,
+      },
+      { idempotencyKey: opts.idempotencyKey ?? newIdempotencyKey() },
+    );
     return fromReceipt(data);
   }
 
-  async sendInvoice(paymentRequest: string, opts: { sats?: number; memo?: string } = {}): Promise<Receipt> {
-    const data = await this.client.post<ReceiptJSON>("/v1/payments/send", {
-      agent_id: this.id,
-      payment_request: paymentRequest,
-      sats: opts.sats,
-      memo: opts.memo,
-    });
+  async sendInvoice(
+    paymentRequest: string,
+    opts: { sats?: number; memo?: string; idempotencyKey?: string } = {},
+  ): Promise<Receipt> {
+    const data = await this.client.post<ReceiptJSON>(
+      "/v1/payments/send",
+      {
+        agent_id: this.id,
+        payment_request: paymentRequest,
+        sats: opts.sats,
+        memo: opts.memo,
+      },
+      { idempotencyKey: opts.idempotencyKey ?? newIdempotencyKey() },
+    );
     return fromReceipt(data);
   }
 
-  async keysend(destPubkey: string, sats: number, memo?: string): Promise<Receipt> {
-    const data = await this.client.post<ReceiptJSON>("/v1/payments/send", {
-      agent_id: this.id,
-      dest_pubkey: destPubkey,
-      sats,
-      memo,
-    });
+  async keysend(
+    destPubkey: string,
+    sats: number,
+    memo?: string,
+    opts: SendOptions = {},
+  ): Promise<Receipt> {
+    const data = await this.client.post<ReceiptJSON>(
+      "/v1/payments/send",
+      {
+        agent_id: this.id,
+        dest_pubkey: destPubkey,
+        sats,
+        memo,
+      },
+      { idempotencyKey: opts.idempotencyKey ?? newIdempotencyKey() },
+    );
     return fromReceipt(data);
   }
 

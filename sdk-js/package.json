@@ -15,7 +15,7 @@
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc",
-    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "test": "tsc && node --test tests/*.test.mjs",
     "lint": "tsc --noEmit"
   },
   "engines": {

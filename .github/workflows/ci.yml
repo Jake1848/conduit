@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core:
+    name: core (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    defaults:
+      run:
+        working-directory: core
+
+    env:
+      CONDUIT_ENV: development
+      CONDUIT_NETWORK: testnet
+      LND_MOCK: "true"
+      BOOTSTRAP_API_KEY: ck_test_ci_root
+      API_SECRET_KEY: ci-test-secret-key
+      RATE_LIMIT_PER_MINUTE: "100000"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check conduit_core alembic tests
+
+      - name: Tests (pytest)
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+        run: pytest -x -q
+
+      - name: Migrations match models (alembic check)
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./ci_alembic_check.db
+        run: |
+          alembic upgrade head
+          alembic check

@@ -55,9 +55,12 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     # raise_app_exceptions=False so unhandled exceptions get a 500 response
     # (rendered by our exception handler) instead of being re-raised to the test.
+    # Use the active bootstrap key (env-driven) so the suite works under any
+    # BOOTSTRAP_API_KEY — local default or the CI-provided value.
+    bootstrap_key = os.environ["BOOTSTRAP_API_KEY"]
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        c.headers["Authorization"] = "Bearer ck_test_root_for_tests"
+        c.headers["Authorization"] = f"Bearer {bootstrap_key}"
         yield c
 
 
