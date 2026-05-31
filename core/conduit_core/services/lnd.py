@@ -545,11 +545,18 @@ class LNDRestClient:
         We translate that into InvoiceUpdate objects. The caller is responsible
         for reconnection (see InvoiceWatcher) — if the stream disconnects, this
         method just stops yielding and returns.
+
+        This is a LONG-LIVED idle stream: on a quiet node no bytes arrive for
+        minutes. The client's default 30s read timeout would otherwise tear the
+        stream down every 30s (constant reconnect churn + a small window where a
+        settling invoice could be missed). Disable the read timeout here; the
+        InvoiceWatcher still reconnects on a genuine disconnect.
         """
         import json as _json
 
         url = self._base + "/v1/invoices/subscribe"
-        async with self._client.stream("GET", url) as r:
+        stream_timeout = httpx.Timeout(None, connect=5.0)
+        async with self._client.stream("GET", url, timeout=stream_timeout) as r:
             r.raise_for_status()
             async for line in r.aiter_lines():
                 line = line.strip()

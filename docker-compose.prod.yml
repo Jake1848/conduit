@@ -13,10 +13,19 @@
 #
 # Run alembic migrations on every boot via core/entrypoint.sh.
 
+# Cap container logs so an unbounded log stream can't fill the disk (which
+# would take Postgres down). 5 x 10 MB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: conduit-postgres
+    logging: *default-logging
     environment:
       POSTGRES_USER: conduit
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -36,6 +45,7 @@ services:
       context: ./core
     image: conduit/core:prod
     container_name: conduit-api
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +78,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: conduit-nginx
+    logging: *default-logging
     depends_on: [api]
     ports:
       - "80:80"
