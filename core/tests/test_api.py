@@ -21,6 +21,19 @@ async def test_health_is_public(client):
 
 
 @pytest.mark.asyncio
+async def test_repeated_auth_updates_last_used_at(client):
+    """Regression: auth writes api_keys.last_used_at = datetime.now(UTC) (tz-aware)
+    on every authenticated request. With tz-naive columns this raised an asyncpg
+    DataError on Postgres and 500'd every authenticated endpoint. Two back-to-back
+    authenticated calls must both succeed. (Caught only when this suite runs against
+    Postgres — see the `core-postgres` CI job.)"""
+    r1 = await client.get("/v1/agents")
+    assert r1.status_code == 200, r1.text
+    r2 = await client.get("/v1/agents")
+    assert r2.status_code == 200, r2.text
+
+
+@pytest.mark.asyncio
 async def test_status_requires_auth(client):
     r = await client.get("/v1/status", headers={"Authorization": ""})
     assert r.status_code == 401

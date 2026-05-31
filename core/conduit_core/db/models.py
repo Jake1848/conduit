@@ -25,8 +25,10 @@ class APIKey(Base):
     key_hash: Mapped[str] = mapped_column(String(120), nullable=False)
     prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     scope: Mapped[str] = mapped_column(String(16), default="read", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -37,7 +39,9 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     pubkey: Mapped[str | None] = mapped_column(String(80), nullable=True)
     lnd_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id"), nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -69,9 +73,11 @@ class Policy(Base):
     blocklist: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
     require_memo: Mapped[bool] = mapped_column(Boolean, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime, onupdate=func.now(), nullable=True
+        DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="policy")
@@ -90,13 +96,13 @@ class Transaction(Base):
     payment_preimage: Mapped[str | None] = mapped_column(String(120), nullable=True)
     payment_request: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
-    settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memo: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), index=True
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="transactions")
@@ -110,7 +116,9 @@ class Webhook(Base):
     events: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array
     secret: Mapped[str] = mapped_column(String(120), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class IdempotencyRecord(Base):
@@ -134,7 +142,7 @@ class IdempotencyRecord(Base):
     response_status: Mapped[int] = mapped_column(Integer, nullable=False)
     response_body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (

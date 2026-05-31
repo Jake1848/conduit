@@ -53,6 +53,60 @@ jobs:
           alembic upgrade head
           alembic check
 
+  core-postgres:
+    name: core (postgres)
+    runs-on: ubuntu-latest
+
+    # Real Postgres catches the timezone-aware vs -naive class of bug that
+    # SQLite silently tolerates (which is how the auth/reconciler/policy
+    # timezone bug shipped green on the SQLite-only suite).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: conduit
+          POSTGRES_PASSWORD: conduit
+          POSTGRES_DB: conduit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U conduit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    defaults:
+      run:
+        working-directory: core
+
+    env:
+      CONDUIT_ENV: development
+      CONDUIT_NETWORK: testnet
+      LND_MOCK: "true"
+      BOOTSTRAP_API_KEY: ck_test_ci_root
+      API_SECRET_KEY: ci-test-secret-key
+      RATE_LIMIT_PER_MINUTE: "100000"
+      DATABASE_URL: "postgresql+asyncpg://conduit:conduit@localhost:5432/conduit_test"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Migrations on Postgres (upgrade + check)
+        run: |
+          alembic upgrade head
+          alembic check
+
+      - name: Tests (pytest on Postgres)
+        run: pytest -x -q
+
   sdk-python:
     name: sdk-python (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
