@@ -54,6 +54,21 @@ async def list_for_agent(
     )
 
 
+@router.get("/v1/transactions/recent", response_model=TransactionListOut)
+async def list_recent(
+    limit: int = Query(50, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+    _=Depends(require_scope("read")),
+) -> TransactionListOut:
+    """Most recent transactions across the whole fleet (one query). Powers the
+    dashboard live feed + audit log without polling every agent. Defined BEFORE
+    /{tx_id} so 'recent' isn't captured as a transaction id."""
+    q = select(Transaction).order_by(Transaction.created_at.desc()).limit(limit + 1)
+    rows = (await session.execute(q)).scalars().all()
+    has_more = len(rows) > limit
+    return TransactionListOut(data=[_to_out(r) for r in rows[:limit]], has_more=has_more)
+
+
 @router.get("/v1/transactions/{tx_id}", response_model=TransactionOut)
 async def get_transaction(
     tx_id: str,

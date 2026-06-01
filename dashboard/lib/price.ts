@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-/* BTC spot price (USD). Cached in-module + localStorage, refreshed every 60s.
+/* BTC spot price (USD). Cached in-module + localStorage, refreshed every 5 min.
    CoinGecko's simple-price endpoint is CORS-enabled for browser use. */
 
 const CACHE_KEY = "conduit_btc_price";
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 5 * 60_000;
 const FALLBACK = 95_000; // used only until the first successful fetch
 
 interface Cached {

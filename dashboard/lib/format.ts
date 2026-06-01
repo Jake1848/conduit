@@ -92,9 +92,18 @@ export function dirClass(d: TxDirectionLike): "out" | "in" {
 }
 type TxDirectionLike = "send" | "receive";
 
-/** Map a destination/route for display, falling back to a sensible label. */
+/** Truncate a long hex pubkey to "02001bbe…c0c0"; pass node aliases through. */
+export function truncPubkey(s: string): string {
+  if (s.length >= 20 && /^[0-9a-fA-F]+$/.test(s)) return s.slice(0, 8) + "…" + s.slice(-4);
+  return s;
+}
+
+/** Resolve a transaction's destination to a human label for the feed/history.
+ *  send → external pubkey (truncated) or memo; receive → memo or "incoming". */
 export function txDestination(t: { destination: string | null; memo: string | null; direction: string }): string {
-  return t.destination || t.memo || (t.direction === "receive" ? "incoming" : "lightning");
+  if (t.destination) return truncPubkey(t.destination);
+  if (t.memo) return t.memo;
+  return t.direction === "receive" ? "incoming" : "lightning";
 }
 
 /** Scope → pill color class. */

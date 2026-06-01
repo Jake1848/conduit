@@ -190,6 +190,7 @@ input, textarea, select { font-family: inherit; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 18px 20px;
   position: relative; overflow: hidden;
+  box-shadow: var(--shadow);
   transition: border-color 0.18s;
 }
 .stat-card:hover { border-color: var(--border-2); }
@@ -218,6 +219,7 @@ input, textarea, select { font-family: inherit; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 20px;
   display: flex; flex-direction: column; min-width: 0;
+  box-shadow: var(--shadow);
 }
 .panel-head {
   display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
@@ -349,6 +351,7 @@ input, textarea, select { font-family: inherit; }
 .table-wrap {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); overflow: hidden; overflow-x: auto;
+  box-shadow: var(--shadow);
 }
 table.data { width: 100%; border-collapse: collapse; }
 table.data th {

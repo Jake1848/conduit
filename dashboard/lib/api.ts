@@ -10,6 +10,7 @@ import type {
   Health,
   Invoice,
   LedgerResult,
+  Metrics,
   Policy,
   Scope,
   Transaction,
@@ -126,6 +127,14 @@ export const api = {
       body: { name, ...(dailyLimit ? { daily_limit: dailyLimit } : {}) },
       idempotencyKey: uuid(),
     }),
+
+  // ---- fleet metrics + global feed (server-aggregated; no per-agent fan-out) ----
+  getMetrics: (signal?: AbortSignal) => request<Metrics>("/v1/metrics", { signal }),
+  getRecentTransactions: (limit = 50, signal?: AbortSignal) =>
+    request<{ data: Transaction[]; has_more: boolean }>(
+      `/v1/transactions/recent?limit=${limit}`,
+      { signal },
+    ),
 
   // ---- ledger ----
   credit: (id: string, sats: number, reason = "console credit") =>

@@ -5,50 +5,50 @@ import Link from "next/link";
 import { useAppData } from "@/lib/appdata";
 import { useBtcPrice } from "@/lib/price";
 import { useOverview } from "@/lib/useOverview";
-import { useTxCounts, roleFromName } from "@/lib/useTxCounts";
-import {
-  fmtSats,
-  fmtTime,
-  fmtUsd,
-  satsToBtc,
-  satsToUsd,
-  txDestination,
-} from "@/lib/format";
+import { roleFromName } from "@/lib/useTxCounts";
+import { fmtSats, fmtTime, fmtUsd, satsToBtc, satsToUsd, txDestination } from "@/lib/format";
+import type { TopAgent } from "@/lib/types";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Avatar } from "@/components/Avatar";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { BarChart } from "@/components/charts/BarChart";
 
-const kSats = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(Math.round(n)));
+const kSats = (n: number) =>
+  n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(Math.round(n));
 
 function seriesStats(arr: number[]) {
   const nz = arr.filter((x) => x > 0);
-  const max = arr.length ? Math.max(...arr) : 0;
-  const min = nz.length ? Math.min(...nz) : 0;
-  const avg = arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0;
-  const now = arr.length ? arr[arr.length - 1] : 0;
-  return { max, min, avg, now };
+  return {
+    max: arr.length ? Math.max(...arr) : 0,
+    min: nz.length ? Math.min(...nz) : 0,
+    avg: arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0,
+    now: arr.length ? arr[arr.length - 1] : 0,
+  };
 }
 
 export default function OverviewPage() {
-  const { agents, treasurySats, activeCount, balancesReady, balances } = useAppData();
+  const { treasurySats: fleetTreasury, agents } = useAppData();
   const price = useBtcPrice();
-  const ov = useOverview(agents);
+  const { metrics, feed, ready } = useOverview(agents);
   const [filter, setFilter] = useState<"ALL" | "LIVE" | "FROZEN">("ALL");
 
-  const wallets = useMemo(() => {
-    const f = agents.filter((a) =>
-      filter === "ALL" ? true : filter === "LIVE" ? a.active : !a.active,
-    );
-    return f.slice(0, 5);
-  }, [agents, filter]);
+  // chart series from the server's 24h hourly buckets
+  const area = metrics?.hourly.map((h) => h.volume_sats) ?? [];
+  const bars = metrics?.hourly.map((h) => h.count) ?? [];
+  const labels =
+    metrics?.hourly.map((h, i) => (i % 4 === 0 ? String(new Date(h.hour).getHours()).padStart(2, "0") : "")) ?? [];
+  const areaStat = seriesStats(area);
+  const barStat = seriesStats(bars);
 
-  const walletCounts = useTxCounts(wallets.map((a) => a.id));
-
+  const treasurySats = metrics?.treasury_sats ?? fleetTreasury;
   const treasuryUsd = satsToUsd(treasurySats, price);
-  const areaStat = seriesStats(ov.area);
-  const barStat = seriesStats(ov.bars);
+
+  const wallets: TopAgent[] = useMemo(() => {
+    const list = metrics?.top_agents ?? [];
+    const f = list.filter((a) => (filter === "ALL" ? true : filter === "LIVE" ? a.active : !a.active));
+    return f.slice(0, 5);
+  }, [metrics, filter]);
 
   return (
     <>
@@ -56,48 +56,46 @@ export default function OverviewPage() {
       <div className="stat-grid">
         <StatCard
           label="Treasury Balance"
-          value={satsToBtc(treasurySats)}
-          unit="BTC"
+          value={metrics ? satsToBtc(treasurySats) : <span className="skel" />}
+          unit={metrics ? "BTC" : undefined}
           sub={
             <>
               <span>≈ {fmtUsd(treasuryUsd)}</span>
               <span className="dot">·</span>
-              {balancesReady ? (
-                <span className="up">live</span>
-              ) : (
-                <span className="t-muted">summing…</span>
-              )}
+              <span className="up">live</span>
             </>
           }
         />
         <StatCard
           label="Active Agents"
-          value={activeCount.toLocaleString()}
+          value={metrics ? metrics.active_agents.toLocaleString() : <span className="skel" />}
           sub={
             <>
               <span className="t-muted">of</span>
-              <span>{agents.length.toLocaleString()}</span>
+              <span>{(metrics?.total_agents ?? agents.length).toLocaleString()}</span>
               <span className="t-muted">total</span>
             </>
           }
         />
         <StatCard
           label="Tx / Minute"
-          value={ov.ready ? ov.txPerMin.toLocaleString() : <span className="skel" />}
+          value={metrics ? metrics.tx_per_min.toLocaleString() : <span className="skel" />}
           sub={
             <>
-              <span className="t-muted">sampled live feed</span>
+              <span className="t-muted">rolling 60s</span>
             </>
           }
         />
         <StatCard
           label="Avg Settlement"
-          value={ov.avgSettlementMs != null ? ov.avgSettlementMs : ov.ready ? "—" : <span className="skel" />}
-          unit={ov.avgSettlementMs != null ? "ms" : undefined}
+          value={metrics ? (metrics.avg_settlement_ms ?? "—") : <span className="skel" />}
+          unit={metrics?.avg_settlement_ms != null ? "ms" : undefined}
           sub={
             <>
               <span className="t-muted">p99</span>
-              <span className="t-gold">{ov.p99SettlementMs != null ? ov.p99SettlementMs + "ms" : "—"}</span>
+              <span className="t-gold">
+                {metrics?.p99_settlement_ms != null ? metrics.p99_settlement_ms + "ms" : "—"}
+              </span>
             </>
           }
         />
@@ -115,7 +113,13 @@ export default function OverviewPage() {
               LIVE
             </span>
           </div>
-          <AreaChart data={ov.area} labels={ov.areaLabels} />
+          {metrics ? (
+            <AreaChart data={area} labels={labels} />
+          ) : (
+            <div className="chart-box" style={{ display: "grid", placeItems: "center" }}>
+              <span className="spinner" />
+            </div>
+          )}
           <div className="chart-stats">
             <div className="chart-stat">
               <div className="l">High</div>
@@ -142,7 +146,13 @@ export default function OverviewPage() {
               24h
             </span>
           </div>
-          <BarChart data={ov.bars} labels={ov.barLabels} />
+          {metrics ? (
+            <BarChart data={bars} labels={labels} />
+          ) : (
+            <div className="chart-box" style={{ display: "grid", placeItems: "center" }}>
+              <span className="spinner" />
+            </div>
+          )}
           <div className="chart-stats">
             <div className="chart-stat">
               <div className="l">Peak</div>
@@ -165,6 +175,7 @@ export default function OverviewPage() {
         <div className="panel">
           <div className="panel-head">
             <h3>Agent Wallets</h3>
+            <span className="sub">· most active</span>
             <div className="spacer" />
             <div className="tabs">
               {(["ALL", "LIVE", "FROZEN"] as const).map((t) => (
@@ -179,28 +190,29 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="agent-list">
-            {wallets.map((a) => {
-              const bal = balances[a.id];
-              const tc = walletCounts[a.id];
-              return (
-                <Link className="agent-row" key={a.id} href={`/wallets/${a.id}`}>
-                  <Avatar name={a.name} />
-                  <div className="agent-meta">
-                    <div className="nm">{a.name}</div>
-                    <div className="scope">
-                      <span className="tag">scope: {roleFromName(a.name)}</span> &nbsp;{" "}
-                      {tc ? `${tc.count}${tc.hasMore ? "+" : ""} tx today` : "…"}
-                    </div>
+            {wallets.map((a) => (
+              <Link className="agent-row" key={a.agent_id} href={`/wallets/${a.agent_id}`}>
+                <Avatar name={a.name} />
+                <div className="agent-meta">
+                  <div className="nm">{a.name}</div>
+                  <div className="scope">
+                    <span className="tag">scope: {roleFromName(a.name)}</span> &nbsp;{" "}
+                    {a.tx_today.toLocaleString()} tx today
                   </div>
-                  <div className="agent-bal">
-                    <div className="sats">{bal ? fmtSats(bal.available_sats) + " sats" : <span className="skel" />}</div>
-                    <div className="usd">{bal ? fmtUsd(satsToUsd(bal.available_sats, price)) : ""}</div>
-                  </div>
-                  <StatusBadge s={a.active ? "live" : "frozen"} />
-                </Link>
-              );
-            })}
-            {agents.length === 0 && <div className="empty">No agents in this fleet yet.</div>}
+                </div>
+                <div className="agent-bal">
+                  <div className="sats">{fmtSats(a.balance_sats)} sats</div>
+                  <div className="usd">{fmtUsd(satsToUsd(a.balance_sats, price))}</div>
+                </div>
+                <StatusBadge s={a.active ? "live" : "frozen"} />
+              </Link>
+            ))}
+            {!metrics && (
+              <div className="loading-row">
+                <span className="spinner" /> Loading agents…
+              </div>
+            )}
+            {metrics && wallets.length === 0 && <div className="empty">No agents match this filter.</div>}
           </div>
         </div>
 
@@ -214,7 +226,7 @@ export default function OverviewPage() {
             </span>
           </div>
           <div className="tx-feed">
-            {ov.feed.map((t) => {
+            {feed.map((t) => {
               const dir = t.direction === "send" ? "out" : "in";
               return (
                 <div className={"tx-item" + (t.isNew ? " enter" : "")} key={t.id}>
@@ -232,8 +244,12 @@ export default function OverviewPage() {
                 </div>
               );
             })}
-            {!ov.ready && <div className="loading-row"><span className="spinner" /> Subscribing to live feed…</div>}
-            {ov.ready && ov.feed.length === 0 && <div className="empty">No recent transactions.</div>}
+            {!ready && (
+              <div className="loading-row">
+                <span className="spinner" /> Subscribing to live feed…
+              </div>
+            )}
+            {ready && feed.length === 0 && <div className="empty">No recent transactions.</div>}
           </div>
         </div>
       </div>

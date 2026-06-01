@@ -7,6 +7,31 @@ export interface Agent {
   pubkey: string | null;
   active: boolean;
   created_at: string; // ISO
+  balance_sats: number; // denormalized spendable balance (now on the list response)
+}
+
+// ---- /v1/metrics (fleet dashboard) ----
+export interface HourBucket {
+  hour: string; // ISO UTC hour-start
+  count: number;
+  volume_sats: number;
+}
+export interface TopAgent {
+  agent_id: string;
+  name: string;
+  tx_today: number;
+  balance_sats: number;
+  active: boolean;
+}
+export interface Metrics {
+  treasury_sats: number;
+  active_agents: number;
+  total_agents: number;
+  tx_per_min: number;
+  avg_settlement_ms: number | null;
+  p99_settlement_ms: number | null;
+  hourly: HourBucket[];
+  top_agents: TopAgent[];
 }
 
 export interface Balance {

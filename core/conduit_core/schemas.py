@@ -26,6 +26,9 @@ class AgentOut(ORM):
     pubkey: str | None = None
     active: bool
     created_at: datetime
+    # Denormalized spendable balance (already on the Agent row). Additive: lets the
+    # dashboard sum a fleet treasury + show balances without N per-agent /balance calls.
+    balance_sats: int = 0
 
 
 class AgentListOut(BaseModel):
@@ -214,3 +217,30 @@ class APIKeyListItem(BaseModel):
 
 class APIKeyListOut(BaseModel):
     data: list[APIKeyListItem]
+
+
+# ---------- Fleet metrics (dashboard) ----------
+
+class HourBucket(BaseModel):
+    hour: datetime          # UTC hour-start
+    count: int              # transactions in that hour
+    volume_sats: int        # summed amount_sats in that hour
+
+
+class TopAgentOut(BaseModel):
+    agent_id: str
+    name: str
+    tx_today: int
+    balance_sats: int
+    active: bool
+
+
+class MetricsOut(BaseModel):
+    treasury_sats: int
+    active_agents: int
+    total_agents: int
+    tx_per_min: int
+    avg_settlement_ms: int | None
+    p99_settlement_ms: int | None
+    hourly: list[HourBucket]      # 24 buckets, oldest → newest
+    top_agents: list[TopAgentOut]  # most active today

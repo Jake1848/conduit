@@ -86,6 +86,7 @@ export function AreaChart({
               maxTicksLimit: 4,
               callback: (v) => {
                 const n = Number(v);
+                if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
                 return n >= 1000 ? (n / 1000).toFixed(0) + "K" : n;
               },
             },

@@ -16,6 +16,7 @@ from .routes import (
     agents,
     invoices,
     keys,
+    metrics,
     payments,
     policies,
     system,
@@ -179,3 +180,4 @@ app.include_router(payments.router)
 app.include_router(invoices.router)
 app.include_router(transactions.router)
 app.include_router(webhooks.router)
+app.include_router(metrics.router)
