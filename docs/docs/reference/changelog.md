@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0 — Dashboard support + audit fixes
+
+- **`GET /v1/metrics`** — server-aggregated fleet metrics in one call: treasury,
+  active/total agents, tx/min, avg/p99 settlement, a 24h hourly series
+  (count + volume), and the 20 most active agents today. See
+  [Metrics API](../api/metrics.md).
+- **`GET /v1/transactions/recent?limit=N`** — the N most recent transactions
+  across the whole fleet (one query), powering the dashboard live feed + audit
+  log without polling every agent.
+- **`balance_sats` on the agent list/get response** — the denormalized spendable
+  balance is now returned inline on every agent object, so a dashboard can sum a
+  fleet treasury without an `/balance` call per agent. Together these turn the
+  Conduit Console Overview from ~900 requests per load into ~3.
+- **Rate-limit (429) envelope** now nests under `detail` like every other error
+  (`{"detail":{"code":"RATE_LIMITED",…}}`) so SDKs raise the typed `RateLimited`.
+- **Zero-amount BOLT11 sends** now forward the resolved amount to LND
+  (previously the amount was dropped and the payment failed on real LND).
+- **Reconciler/route double-settle guard** — terminal transitions re-check the
+  transaction status under the agent lock, so an overlapping reconciler sweep and
+  payment-route finish can never double-apply a balance change.
+- **Auth lookup is O(1)** — API keys now store a 16-char prefix discriminator, so
+  authentication bcrypt-verifies one candidate instead of every active key.
+
 ## 0.5.0 — CI + SDK hardening
 
 - **Automatic retries** in both SDKs — 429 / 5xx / network errors, with

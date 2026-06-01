@@ -15,7 +15,7 @@ Verify it's up:
 
 ```bash
 curl http://localhost:8000/v1/health
-# {"ok":true,"version":"0.1.0","network":"testnet"}
+# {"ok":true,"version":"0.6.0","network":"testnet"}
 ```
 
 The dev container ships with `LND_MOCK=true` and a bootstrap admin key

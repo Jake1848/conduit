@@ -110,6 +110,7 @@ async def _execute_payment(
     *,
     payment_hash: str,
     keysend_preimage: bytes | None = None,
+    bolt11_send_amount: int | None = None,
 ) -> ReceiptOut:
     """Run a payment.
 
@@ -207,7 +208,9 @@ async def _execute_payment(
     lnd = get_lnd()
     try:
         if invoice:
-            result = await lnd.pay_invoice(invoice, max_fee_sats=fee_budget)
+            result = await lnd.pay_invoice(
+                invoice, max_fee_sats=fee_budget, amount_sats=bolt11_send_amount
+            )
         elif dest_pubkey:
             result = await lnd.keysend(
                 dest_pubkey, sats, memo or "", preimage=keysend_preimage
@@ -222,11 +225,16 @@ async def _execute_payment(
                     select(Agent).where(Agent.id == agent_id).with_for_update()
                 )
             ).scalar_one()
-            refund_agent.balance_sats += debit_total
             failed_tx = await session.get(Transaction, tx_id_local)
             assert failed_tx is not None
-            failed_tx.status = "failed"
-            failed_tx.failure_reason = str(e.detail)
+            # Re-check under the agent lock: a reconciler sweep may have already
+            # terminalized this row. Only mutate balance/status if still pending,
+            # so the refund is never applied twice.
+            await session.refresh(failed_tx)
+            if failed_tx.status == "pending":
+                refund_agent.balance_sats += debit_total
+                failed_tx.status = "failed"
+                failed_tx.failure_reason = str(e.detail)
             await session.commit()
         except Exception:
             await session.rollback()
@@ -287,16 +295,21 @@ async def _execute_payment(
                 select(Agent).where(Agent.id == agent_id).with_for_update()
             )
         ).scalar_one()
-        if fee_refund > 0:
-            settle_agent.balance_sats += fee_refund
         settled_tx = await session.get(Transaction, tx_id_local)
         assert settled_tx is not None
-        settled_tx.status = "settled"
-        settled_tx.payment_hash = result.payment_hash
-        settled_tx.payment_preimage = result.payment_preimage
-        settled_tx.fee_sats = actual_fee
-        settled_tx.latency_ms = result.latency_ms
-        settled_tx.settled_at = datetime.now(UTC)
+        # Re-check under the agent lock: if the reconciler already settled this row,
+        # skip the balance/status mutation (it already refunded the fee delta) so we
+        # don't double-apply. The receipt below is still built from `result`.
+        await session.refresh(settled_tx)
+        if settled_tx.status == "pending":
+            if fee_refund > 0:
+                settle_agent.balance_sats += fee_refund
+            settled_tx.status = "settled"
+            settled_tx.payment_hash = result.payment_hash
+            settled_tx.payment_preimage = result.payment_preimage
+            settled_tx.fee_sats = actual_fee
+            settled_tx.latency_ms = result.latency_ms
+            settled_tx.settled_at = datetime.now(UTC)
         await session.commit()
     except Exception:
         await session.rollback()
@@ -378,6 +391,8 @@ async def send_payment(
                 invoice=body.payment_request,
                 dest_pubkey=decoded.destination,
                 payment_hash=decoded.payment_hash,
+                # Only a zero-amount invoice needs the amount forwarded to LND.
+                bolt11_send_amount=(sats if decoded.amount_sats == 0 else None),
             )
         if body.dest_pubkey:
             if not body.sats:
@@ -417,6 +432,7 @@ async def pay(
         invoice: str | None = None
         dest_pubkey: str | None = None
         payment_hash: str | None = None
+        bolt11_send_amount: int | None = None
 
         if is_lightning_address(body.to):
             invoice = await resolve_lightning_address_to_invoice(
@@ -449,6 +465,7 @@ async def pay(
                 )
             dest_pubkey = decoded.destination
             payment_hash = decoded.payment_hash
+            bolt11_send_amount = body.sats if decoded.amount_sats == 0 else None
         else:
             raise InvalidInput(f"Unsupported destination format: {body.to}")
 
@@ -463,6 +480,7 @@ async def pay(
             invoice=invoice,
             dest_pubkey=dest_pubkey,
             payment_hash=payment_hash,
+            bolt11_send_amount=bolt11_send_amount,
         )
 
     return await _idempotent(request, session, api_key, body, run)

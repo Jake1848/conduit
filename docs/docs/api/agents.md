@@ -19,12 +19,16 @@ to fund them before they can pay anyone.
 `GET /v1/agents` — requires `read`
 
 ```json
-{ "data": [{"id": "agt_…", "name": "…", "active": true, ...}] }
+{ "data": [{"id": "agt_…", "name": "…", "active": true, "balance_sats": 12408, "created_at": "…"}] }
 ```
+
+Each agent object carries `balance_sats` (the denormalized spendable balance,
+added in 0.6.0) so you can sum a fleet treasury without an `/balance` call per
+agent. `pending_sats` is still only available on the per-agent balance endpoint.
 
 ## Get one
 
-`GET /v1/agents/{agent_id}` — requires `read`
+`GET /v1/agents/{agent_id}` — requires `read` (same object shape, incl. `balance_sats`)
 
 ## Deactivate
 

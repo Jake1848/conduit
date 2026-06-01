@@ -197,6 +197,14 @@ class PaymentReconciler:
                 select(Agent).where(Agent.id == tx.agent_id).with_for_update()
             )
         ).scalar_one()
+        # Re-read the tx UNDER the agent lock: the payment route's Phase 3 may have
+        # terminalized this row while we were looking it up (the 90s eligibility
+        # window overlaps an in-flight route call). If it's no longer pending, the
+        # route already applied the balance change — bail to avoid double-mutating.
+        await session.refresh(tx)
+        if tx.status != "pending":
+            log.info("reconcile_skip_not_pending", tx_id=tx.id, status=tx.status)
+            return False
         actual_fee = max(0, int(lookup.fee_sats))
         # tx.fee_sats currently holds the BUDGET; the actual fee may be lower.
         fee_refund = max(0, tx.fee_sats - actual_fee)
@@ -239,6 +247,12 @@ class PaymentReconciler:
                 select(Agent).where(Agent.id == tx.agent_id).with_for_update()
             )
         ).scalar_one()
+        # Re-read under the agent lock — bail if the route already terminalized it
+        # (see _mark_settled), so we never refund a payment twice.
+        await session.refresh(tx)
+        if tx.status != "pending":
+            log.info("reconcile_skip_not_pending", tx_id=tx.id, status=tx.status)
+            return False
         # tx.fee_sats currently holds the BUDGET; refund the full debit
         # (amount + budget).
         debit_total = tx.amount_sats + tx.fee_sats

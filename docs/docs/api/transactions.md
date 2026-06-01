@@ -34,6 +34,15 @@ Returns:
 }
 ```
 
+## Recent across the fleet
+
+`GET /v1/transactions/recent?limit=50` — requires `read` _(added in 0.6.0)_
+
+The `limit` (1–500, default 50) most recent transactions across **all** agents,
+ordered by `created_at` desc. One query — used by the dashboard live feed and
+audit log instead of polling every agent. Returns the same
+`{ "data": [Transaction], "has_more": bool }` shape as the per-agent list above.
+
 ## Get one
 
 `GET /v1/transactions/{tx_id}` — requires `read`

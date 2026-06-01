@@ -88,6 +88,16 @@ bash scripts/backup_postgres_to_s3.sh
 The local-only script is the default; periodically restore a dump into a
 throwaway database to confirm the backups are actually usable.
 
+> ⚠️ **Gap on the live box (as of the 0.6.0 audit):** only `backup_postgres.sh`
+> (local) is scheduled — every dump lives on the same disk as the database it
+> protects, so a disk/host loss takes both. The off-box `backup_postgres_to_s3.sh`
+> exists but is **not yet scheduled** because no S3 bucket is provisioned. Once a
+> bucket is available (e.g. Hetzner Object Storage), replace the cron with the S3
+> variant (set `BACKUP_S3_BUCKET` + `AWS_ENDPOINT_URL` and credentials in a
+> `0600` env file) so the ledger survives host loss. Consider a dead-man's-switch
+> (e.g. healthchecks.io) that the backup pings, alerting if no off-box copy lands
+> within ~12h.
+
 ## Security checklist
 
 - [ ] LND seed phrase stored **only** on paper, off the VPS

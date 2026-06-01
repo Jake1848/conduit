@@ -38,10 +38,14 @@ async def _extract_bearer(authorization: str | None) -> str:
 async def _resolve_api_key(token: str, session: AsyncSession) -> APIKey:
     if not token.startswith(("ck_live_", "ck_test_")):
         raise AuthenticationError("Malformed API key")
-    prefix = token[:8]
-    # We can't query by raw key (hashed). Fetch active keys with same prefix and verify.
+    # Narrow candidates by the stored prefix BEFORE the deliberately-slow bcrypt
+    # verify. New keys store a 16-char prefix (unique per key → O(1) candidates);
+    # the 8-char network prefix alone ("ck_test_"/"ck_live_") matched ALL keys, so
+    # auth used to bcrypt-verify against every active key (an O(N) DoS amplifier).
+    # We match both lengths so legacy 8-char-prefix keys keep working.
+    candidates = {token[:16], token[:8]}
     result = await session.execute(
-        select(APIKey).where(APIKey.revoked.is_(False), APIKey.prefix == prefix)
+        select(APIKey).where(APIKey.revoked.is_(False), APIKey.prefix.in_(candidates))
     )
     for row in result.scalars():
         if verify_key(token, row.key_hash):
@@ -84,12 +88,18 @@ async def ensure_bootstrap_key(session: AsyncSession) -> None:
     result = await session.execute(select(APIKey).where(APIKey.label == "bootstrap"))
     existing = result.scalar_one_or_none()
     if existing:
+        # Upgrade a legacy 8-char prefix to the 16-char discriminator in place
+        # (we have the raw key from settings) so auth is O(1) for the bootstrap key too.
+        if existing.prefix != raw[:16]:
+            existing.prefix = raw[:16]
+            await session.commit()
+            log.info("bootstrap_api_key_prefix_upgraded", key_id=existing.id)
         return
     key = APIKey(
         id=api_key_id(),
         label="bootstrap",
         key_hash=hash_key(raw),
-        prefix=raw[:8],
+        prefix=raw[:16],
         scope="admin",
     )
     session.add(key)
@@ -104,7 +114,7 @@ def mint_api_key(scope: str = "read") -> tuple[str, APIKey]:
     key = APIKey(
         id=api_key_id(),
         key_hash=hash_key(raw),
-        prefix=raw[:8],
+        prefix=raw[:16],  # 16-char discriminator → O(1) auth lookup
         scope=scope,
     )
     return raw, key

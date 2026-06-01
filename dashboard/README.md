@@ -77,20 +77,23 @@ There are no user accounts — the API key **is** the auth:
 
 | Route | View | Real API usage |
 |---|---|---|
-| `/` | **Overview** | Treasury = Σ agent balances; active count; live tx/min + avg settlement + charts from polled transactions. |
-| `/wallets` | **Wallets** | `GET /v1/agents` + per-page balances & tx counts; search/filter; bulk create; CSV export. |
+| `/` | **Overview** | `GET /v1/metrics` (treasury, active count, tx/min, settlement, 24h charts, top agents) + `GET /v1/transactions/recent` (live feed). ~2 calls. |
+| `/wallets` | **Wallets** | `GET /v1/agents` (balances inline) + per-page tx counts; search/filter; bulk create; CSV export. |
 | `/wallets/[id]` | **Agent Detail** | Balance, credit/debit, policy editor (`GET`/`POST /policy`), tx history, `POST /v1/invoices`. |
-| `/audit` | **Audit Log** | Transactions aggregated across agents, client-side filtered, CSV export. |
+| `/audit` | **Audit Log** | `GET /v1/transactions/recent`, client-side filtered, CSV export. |
 | `/keys` | **API Keys** | `GET`/`POST`/`DELETE /v1/api-keys`; secret shown once in a modal. Admin only. |
 | `/policies` `/network` `/webhooks` `/sandbox` `/docs` | Placeholders | Styled "coming soon". |
 
-### Notes on real-data deltas from the design mock
+### Notes on real-data behavior
 
-- The API's agent objects carry **no balance** and **no scope** — balances are fetched per
-  agent (`/balance`); "scope" is derived from the agent name's role prefix.
-- There is no metrics or websocket endpoint, so the Overview metrics + live feed are
-  **computed from polled transactions** across a sample of active agents (polled every ~4s);
-  the feed prepends genuinely new transactions with the design's enter animation.
+- **Server-aggregated, not polled-per-agent.** The Overview stat cards, charts, and
+  "most active" wallet list come from a single `GET /v1/metrics` call (24h hourly series,
+  treasury, tx/min, settlement, top agents); the live feed + audit log come from
+  `GET /v1/transactions/recent`. The agent list (`GET /v1/agents`) returns `balance_sats`
+  inline, so the fleet treasury needs no per-agent `/balance` calls. The whole Overview is
+  ~3 requests regardless of fleet size (it used to be ~900).
+- There's no scope field on agents, so the "scope" tag is derived from the agent name's role
+  prefix; per-agent `tx_today` + balance come from `/v1/metrics`'s `top_agents`.
 - `{id}` routes use the canonical `agt_…` id (the agent **name** is not accepted), so the
   detail route is `/wallets/agt_…`.
 - The network pill reflects the **real** network from `/v1/health` (regtest/testnet/mainnet)

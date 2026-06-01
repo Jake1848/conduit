@@ -88,14 +88,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": str(retry_after)},
+                # Nest under `detail` to match every other error envelope in the API
+                # (the ConduitError handler returns {"detail": {...}}). SDK parsers read
+                # the code from body.detail.code, so a flat body would surface as a
+                # generic ConduitError instead of the typed RateLimited.
                 content={
-                    "error": "rate_limited",
-                    "code": "RATE_LIMITED",
-                    "detail": (
-                        "Too many requests. Slow down and retry after "
-                        f"{retry_after} seconds."
-                    ),
-                    "retry_after": retry_after,
+                    "detail": {
+                        "error": "rate_limited",
+                        "code": "RATE_LIMITED",
+                        "detail": (
+                            "Too many requests. Slow down and retry after "
+                            f"{retry_after} seconds."
+                        ),
+                        "retry_after": retry_after,
+                    }
                 },
             )
         return await call_next(request)

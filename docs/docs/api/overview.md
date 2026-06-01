@@ -31,6 +31,7 @@ The current API version is `v1`. Breaking changes will live under `/v2/…`;
 | Policies     | `/v1/agents/{id}/policy`           | [policies.md](policies.md) |
 | Payments     | `/v1/payments/*`                   | [payments.md](payments.md) |
 | Invoices     | `/v1/invoices/*`                   | [invoices.md](invoices.md) |
-| Transactions | `/v1/agents/{id}/transactions`     | [transactions.md](transactions.md) |
+| Transactions | `/v1/agents/{id}/transactions`, `/v1/transactions/recent` | [transactions.md](transactions.md) |
+| Metrics      | `/v1/metrics`                      | [metrics.md](metrics.md) |
 | Webhooks     | `/v1/webhooks`                     | [webhooks.md](webhooks.md) |
 | System       | `/v1/health`, `/v1/status`         | — |

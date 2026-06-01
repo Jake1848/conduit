@@ -135,7 +135,9 @@ class LNDClient(Protocol):
     async def get_balance(self) -> Balance: ...
     async def create_invoice(self, amount_sats: int, memo: str, expiry: int) -> Invoice: ...
     async def decode_invoice(self, payment_request: str) -> DecodedInvoice: ...
-    async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult: ...
+    async def pay_invoice(
+        self, payment_request: str, max_fee_sats: int, amount_sats: int | None = None
+    ) -> PaymentResult: ...
     async def keysend(
         self,
         dest_pubkey: str,
@@ -243,9 +245,18 @@ class MockLNDClient:
             expiry=int((inv.expires_at - datetime.now(UTC)).total_seconds()),
         )
 
-    async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult:
+    async def pay_invoice(
+        self, payment_request: str, max_fee_sats: int, amount_sats: int | None = None
+    ) -> PaymentResult:
         decoded = await self.decode_invoice(payment_request)
-        amount = decoded.amount_sats or 1
+        # Mirror real LND: a zero-amount invoice REQUIRES an explicit amount, else
+        # the router rejects it. Enforcing this here means tests exercise the path.
+        if decoded.amount_sats == 0 and amount_sats is None:
+            raise PaymentFailed(
+                "Zero-amount invoice requires an explicit amount to pay",
+                failure_reason="amount_required",
+            )
+        amount = decoded.amount_sats or amount_sats or 1
         return await self._simulate_payment(decoded.payment_hash, amount)
 
     async def keysend(
@@ -391,17 +402,22 @@ class LNDRestClient:
     # to make a decision rather than racing it.
     LND_PAYMENT_TIMEOUT_SECONDS = 60
 
-    async def pay_invoice(self, payment_request: str, max_fee_sats: int) -> PaymentResult:
+    async def pay_invoice(
+        self, payment_request: str, max_fee_sats: int, amount_sats: int | None = None
+    ) -> PaymentResult:
         start = time.perf_counter()
-        data = await self._post_streaming(
-            "/v2/router/send",
-            {
-                "payment_request": payment_request,
-                "timeout_seconds": self.LND_PAYMENT_TIMEOUT_SECONDS,
-                "fee_limit_sat": max_fee_sats,
-                "no_inflight_updates": True,
-            },
-        )
+        body: dict = {
+            "payment_request": payment_request,
+            "timeout_seconds": self.LND_PAYMENT_TIMEOUT_SECONDS,
+            "fee_limit_sat": max_fee_sats,
+            "no_inflight_updates": True,
+        }
+        # LND's router REQUIRES an explicit `amt` to pay a zero-amount invoice (and
+        # rejects `amt` on a fixed-amount one). The caller passes amount_sats ONLY
+        # for zero-amount invoices, so include it exactly when present.
+        if amount_sats is not None:
+            body["amt"] = amount_sats
+        data = await self._post_streaming("/v2/router/send", body)
         return self._parse_payment(data, start)
 
     async def keysend(
