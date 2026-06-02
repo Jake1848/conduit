@@ -50,11 +50,11 @@ export function AreaChart({
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: "#111820",
-            borderColor: "#1A2333",
+            backgroundColor: "#1A2333",
+            borderColor: "#232E40",
             borderWidth: 1,
             titleColor: "#6B7B8D",
-            bodyColor: "#E8E6E0",
+            bodyColor: "#D4A843",
             bodyFont: { family: "JetBrains Mono" },
             padding: 10,
             displayColors: false,
