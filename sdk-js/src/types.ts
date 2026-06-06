@@ -17,6 +17,7 @@ export interface ReceiptJSON {
   hash: string | null;
   amount_sats: number;
   fee_sats: number;
+  platform_fee_sats: number;
   settled_in_ms: number | null;
   destination: string | null;
   memo: string | null;

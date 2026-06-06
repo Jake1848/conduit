@@ -30,7 +30,7 @@ function seriesStats(arr: number[]) {
 export default function OverviewPage() {
   const { treasurySats: fleetTreasury, agents } = useAppData();
   const price = useBtcPrice();
-  const { metrics, feed, ready } = useOverview(agents);
+  const { metrics, fees, feed, ready } = useOverview(agents);
   const [filter, setFilter] = useState<"ALL" | "LIVE" | "FROZEN">("ALL");
 
   // chart series from the server's 24h hourly buckets
@@ -43,6 +43,20 @@ export default function OverviewPage() {
 
   const treasurySats = metrics?.treasury_sats ?? fleetTreasury;
   const treasuryUsd = satsToUsd(treasurySats, price);
+
+  // ---- platform-fee revenue (operator earnings) ----
+  // Total/today come from /v1/fees when available, else the metrics fallback.
+  const feeTotalSats = fees?.total_collected_sats ?? metrics?.fee_revenue_total_sats ?? null;
+  const feeTodaySats = fees?.today_sats ?? metrics?.fee_revenue_today_sats ?? null;
+  // Daily fee chart: /v1/fees.fees_by_day is most-recent-first → reverse to chronological.
+  const feeDays = useMemo(() => (fees ? [...fees.fees_by_day].reverse() : []), [fees]);
+  const feeBars = feeDays.map((d) => d.sats);
+  const feeLabels = feeDays.map((d) => {
+    const dt = new Date(d.date + "T00:00:00");
+    return String(dt.getMonth() + 1) + "/" + String(dt.getDate());
+  });
+  const feeStat = seriesStats(feeBars);
+  const feeTotalUsd = feeTotalSats != null ? satsToUsd(feeTotalSats, price) : 0;
 
   const wallets: TopAgent[] = useMemo(() => {
     const list = metrics?.top_agents ?? [];
@@ -95,6 +109,20 @@ export default function OverviewPage() {
               <span className="t-muted">p99</span>
               <span className="t-gold">
                 {metrics?.p99_settlement_ms != null ? metrics.p99_settlement_ms + "ms" : "—"}
+              </span>
+            </>
+          }
+        />
+        <StatCard
+          label="Fee Revenue"
+          value={feeTotalSats != null ? fmtSats(feeTotalSats) : <span className="skel" />}
+          unit={feeTotalSats != null ? "sats" : undefined}
+          sub={
+            <>
+              <span>≈ {fmtUsd(feeTotalUsd)}</span>
+              <span className="dot">·</span>
+              <span className="t-gold">
+                {feeTodaySats != null ? "+" + fmtSats(feeTodaySats) + " today" : "—"}
               </span>
             </>
           }
@@ -165,6 +193,74 @@ export default function OverviewPage() {
             <div className="chart-stat">
               <div className="l">Now</div>
               <div className="v">{kSats(barStat.now)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- platform-fee revenue (operator earnings) ---- */}
+      <div className="row-2">
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Fee Revenue</h3>
+            <span className="sub">· platform fees / day</span>
+            <div className="spacer" />
+            <span className="badge-live">
+              <span className="d" />
+              SATS
+            </span>
+          </div>
+          {fees ? (
+            feeDays.length ? (
+              <BarChart data={feeBars} labels={feeLabels} unit="sats" />
+            ) : (
+              <div className="chart-box" style={{ display: "grid", placeItems: "center" }}>
+                <span className="empty">No platform fees collected yet.</span>
+              </div>
+            )
+          ) : (
+            <div className="chart-box" style={{ display: "grid", placeItems: "center" }}>
+              <span className="spinner" />
+            </div>
+          )}
+          <div className="chart-stats">
+            <div className="chart-stat">
+              <div className="l">Total</div>
+              <div className="v">{feeTotalSats != null ? kSats(feeTotalSats) : "—"}</div>
+            </div>
+            <div className="chart-stat">
+              <div className="l">Today</div>
+              <div className="v">{feeTodaySats != null ? kSats(feeTodaySats) : "—"}</div>
+            </div>
+            <div className="chart-stat">
+              <div className="l">Best Day</div>
+              <div className="v">{fees ? kSats(feeStat.max) : "—"}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Revenue Summary</h3>
+            <span className="sub">· your earnings</span>
+            <div className="spacer" />
+          </div>
+          <div className="agent-list" style={{ flex: 1, justifyContent: "center" }}>
+            <div className="stat-card" style={{ boxShadow: "none" }}>
+              <div className="label">Total Platform Fees</div>
+              <div className="value mono">
+                {feeTotalSats != null ? fmtSats(feeTotalSats) : <span className="skel" />}
+                {feeTotalSats != null && <span className="unit">sats</span>}
+              </div>
+              <div className="sub">
+                <span>≈ {fmtUsd(feeTotalUsd)}</span>
+                {fees && (
+                  <>
+                    <span className="dot">·</span>
+                    <span className="t-muted">{fees.total_collected_btc.toFixed(8)} BTC</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

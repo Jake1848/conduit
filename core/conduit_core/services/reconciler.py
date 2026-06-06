@@ -254,8 +254,8 @@ class PaymentReconciler:
             log.info("reconcile_skip_not_pending", tx_id=tx.id, status=tx.status)
             return False
         # tx.fee_sats currently holds the BUDGET; refund the full debit
-        # (amount + budget).
-        debit_total = tx.amount_sats + tx.fee_sats
+        # (amount + routing budget + platform fee) — a failed payment earns no fee.
+        debit_total = tx.amount_sats + tx.fee_sats + (tx.platform_fee_sats or 0)
         agent.balance_sats = (agent.balance_sats or 0) + debit_total
 
         reason = lookup.failure_reason or "unknown"

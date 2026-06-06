@@ -17,7 +17,8 @@ class Receipt:
     status: str  # 'pending' | 'settled' | 'failed'
     hash: str | None
     amount_sats: int
-    fee_sats: int
+    fee_sats: int  # LND routing fee
+    platform_fee_sats: int  # Conduit operator platform fee (revenue), separate from fee_sats
     settled_in_ms: int | None
     destination: str | None
     memo: str | None
@@ -32,6 +33,7 @@ class Receipt:
             hash=data.get("hash"),
             amount_sats=int(data["amount_sats"]),
             fee_sats=int(data.get("fee_sats", 0)),
+            platform_fee_sats=int(data.get("platform_fee_sats", 0)),
             settled_in_ms=data.get("settled_in_ms"),
             destination=data.get("destination"),
             memo=data.get("memo"),

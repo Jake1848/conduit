@@ -2,7 +2,9 @@
 
 The `conduit-mcp` server exposes Conduit as Model Context Protocol tools.
 Any MCP-compatible client — Claude Desktop, Cursor, custom agents — can
-make Lightning payments through a Conduit-managed wallet.
+make Lightning payments through an agent wallet on the **operator's own** node.
+(Conduit never custodies funds — the wallet is a sub-balance of the LND node
+**you** run.)
 
 ```bash
 pip install conduit-mcp

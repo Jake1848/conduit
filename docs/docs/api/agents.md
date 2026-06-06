@@ -11,8 +11,9 @@
 `daily_limit` is convenience: if provided, Conduit attaches a policy with
 `max_per_day=<value>` in the same request.
 
-New agents start with a **balance of 0**. Use `POST /v1/agents/{id}/credit`
-to fund them before they can pay anyone.
+New agents start with a **balance of 0**. As the operator, use
+`POST /v1/agents/{id}/credit` to fund them from your own node's liquidity before
+they can pay anyone.
 
 ## List
 
@@ -62,9 +63,12 @@ LND node's outbound channel capacity, reported separately at `/v1/status`.
 
 `POST /v1/agents/{agent_id}/credit` — requires `admin`
 
-Operator-initiated deposit. In a fully-automated deployment this also fires
-when an inbound Lightning invoice settles (the [InvoiceWatcher] credits the
-agent automatically). The manual endpoint is for top-ups and reconciliation.
+Operator-initiated deposit. **You**, the operator running Conduit, credit an
+agent on **your own** node from your node's liquidity — this is an entry in your
+own ledger, not a transfer of custody to Conduit. In a fully-automated
+deployment it also fires when an inbound Lightning invoice settles (the
+[InvoiceWatcher] credits the agent automatically). The manual endpoint is for
+top-ups and reconciliation.
 
 ```json
 { "sats": 100000, "reason": "monthly allowance", "metadata": {"period": "2026-05"} }
@@ -85,9 +89,11 @@ Response (status 201):
 
 `POST /v1/agents/{agent_id}/debit` — requires `admin`
 
-Operator-initiated withdrawal. Sweeps funds out of the agent's virtual
-balance without going through the Lightning payment path — useful for
-treasury moves that shouldn't burn an HTLC.
+Operator-initiated withdrawal. **You** sweep funds out of the agent's virtual
+balance back to your own treasury without going through the Lightning payment
+path — useful for treasury moves on your own node that shouldn't burn an HTLC.
+Like credit, this is an adjustment in your own ledger; the sats never leave your
+control.
 
 ```json
 { "sats": 5000, "reason": "month-end sweep" }

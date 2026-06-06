@@ -43,6 +43,18 @@ async def metrics(
         )
     ).scalar_one()
 
+    # ---- platform-fee revenue (operator income on settled sends) ----
+    _fee_sum = func.coalesce(func.sum(Transaction.platform_fee_sats), 0)
+    _settled_send = (Transaction.direction == "send", Transaction.status == "settled")
+    fee_total = (
+        await session.execute(select(_fee_sum).where(*_settled_send))
+    ).scalar_one()
+    fee_today = (
+        await session.execute(
+            select(_fee_sum).where(*_settled_send, Transaction.created_at >= start_today)
+        )
+    ).scalar_one()
+
     # ---- settlement latency (recent settled sends) ----
     lat_rows = (
         await session.execute(
@@ -131,4 +143,6 @@ async def metrics(
         p99_settlement_ms=p99_ms,
         hourly=hourly,
         top_agents=top_agents,
+        fee_revenue_total_sats=int(fee_total),
+        fee_revenue_today_sats=int(fee_today),
     )

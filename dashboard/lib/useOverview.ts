@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import type { Agent, Metrics, Transaction } from "./types";
+import type { Agent, Fees, Metrics, Transaction } from "./types";
 
 /** A transaction enriched with its agent name (for the live feed). */
 export interface FeedTx extends Transaction {
@@ -12,6 +12,7 @@ export interface FeedTx extends Transaction {
 
 export interface OverviewData {
   metrics: Metrics | null;
+  fees: Fees | null; // platform-fee revenue (null until loaded / if key lacks admin scope)
   feed: FeedTx[];
   ready: boolean;
 }
@@ -25,6 +26,7 @@ const FEED_LIMIT = 20;
  *  No per-agent fan-out: two cheap calls regardless of fleet size. */
 export function useOverview(agents: Agent[]): OverviewData {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [fees, setFees] = useState<Fees | null>(null);
   const [feed, setFeed] = useState<FeedTx[]>([]);
   const [ready, setReady] = useState(false);
   const seen = useRef<Set<string>>(new Set());
@@ -67,18 +69,29 @@ export function useOverview(agents: Agent[]): OverviewData {
         /* ignore */
       }
     }
+    async function pollFees() {
+      try {
+        const f = await api.getFees(ctrl.signal);
+        if (!cancelled) setFees(f);
+      } catch {
+        /* ignore — a non-admin key gets 403 here; metrics still drives the card */
+      }
+    }
 
     pollFeed();
     pollMetrics();
+    pollFees();
     const ft = setInterval(pollFeed, FEED_MS);
     const mt = setInterval(pollMetrics, METRICS_MS);
+    const xt = setInterval(pollFees, METRICS_MS);
     return () => {
       cancelled = true;
       clearInterval(ft);
       clearInterval(mt);
+      clearInterval(xt);
       ctrl.abort();
     };
   }, []);
 
-  return { metrics, feed, ready };
+  return { metrics, fees, feed, ready };
 }

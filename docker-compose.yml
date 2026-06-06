@@ -1,30 +1,93 @@
-version: "3.9"
+# Conduit — self-hosted, non-custodial Lightning payments. Your node, your keys.
+#
+# Conduit never touches your funds: it talks to YOUR OWN LND node over REST and
+# all payments settle on YOUR node with YOUR keys. This compose file runs the
+# Conduit API + its Postgres ledger on your infrastructure.
+#
+# QUICK START (see QUICKSTART.md for the full 5-minute guide):
+#   1. Point LND_REST_URL (in .env) at your LND node's REST endpoint.
+#   2. Drop your node's admin.macaroon and tls.cert into ./secrets/.
+#   3. cp .env.example .env  and fill in the generated secrets.
+#   4. docker compose up -d
+#   5. API is live at http://localhost:8000  (try: curl http://localhost:8000/v1/health)
+#
+# For local development against a MOCK LND node (no real money, SQLite), use
+# docker-compose.dev.yml instead.
 
 services:
-  api:
-    build:
-      context: ./core
-    image: conduit/core:dev
-    ports:
-      - "127.0.0.1:8000:8000"
+  postgres:
+    image: postgres:16-alpine
+    container_name: conduit-postgres
     environment:
-      CONDUIT_ENV: ${CONDUIT_ENV:-development}
-      CONDUIT_NETWORK: ${CONDUIT_NETWORK:-testnet}
-      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/conduit.db}
-      API_SECRET_KEY: ${API_SECRET_KEY:-dev-secret-change-me}
-      LND_MOCK: ${LND_MOCK:-true}
-      LND_REST_URL: ${LND_REST_URL:-https://127.0.0.1:8080}
-      LND_MACAROON_PATH: ${LND_MACAROON_PATH:-/lnd/admin.macaroon}
-      LND_TLS_CERT_PATH: ${LND_TLS_CERT_PATH:-/lnd/tls.cert}
-      BOOTSTRAP_API_KEY: ${BOOTSTRAP_API_KEY:-ck_test_dev_root}
+      POSTGRES_USER: conduit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — see .env.example}
+      POSTGRES_DB: conduit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "conduit"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # No published port — Postgres is reachable only from inside the compose net.
+
+  api:
+    image: ghcr.io/jake1848/conduit:latest
+    # Prefer the published image above. To build from source instead, comment
+    # out the `image:` line and uncomment this block:
+    # build:
+    #   context: ./core
+    container_name: conduit-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      CONDUIT_ENV: production
+      CONDUIT_NETWORK: ${CONDUIT_NETWORK:-mainnet}
+
+      # Ledger lives in Postgres (above). Conduit only records the platform fee
+      # and per-agent balances here — never custody of your sats.
+      DATABASE_URL: postgresql+asyncpg://conduit:${POSTGRES_PASSWORD}@postgres:5432/conduit
+
+      # ---- Your LND node (you keep custody) -------------------------------
+      # Point this at YOUR node's REST endpoint. host.docker.internal reaches
+      # an LND running on this host; use an IP/hostname for a remote node.
+      LND_MOCK: "false"
+      LND_REST_URL: ${LND_REST_URL:-https://host.docker.internal:8080}
+      # Mounted read-only from ./secrets below.
+      LND_MACAROON_PATH: /run/secrets/admin.macaroon
+      LND_TLS_CERT_PATH: /run/secrets/tls.cert
+
+      # ---- API auth -------------------------------------------------------
+      BOOTSTRAP_API_KEY: ${BOOTSTRAP_API_KEY:?BOOTSTRAP_API_KEY is required — see .env.example}
+      API_SECRET_KEY: ${API_SECRET_KEY:?API_SECRET_KEY is required — see .env.example}
+
+      # ---- Platform fee (YOUR per-transaction revenue, in sats) -----------
+      # Charged on top of each outbound payment, kept on settle, refunded in
+      # full on failure. Set PLATFORM_FEE_PERCENT=0 to disable.
+      PLATFORM_FEE_PERCENT: ${PLATFORM_FEE_PERCENT:-0.5}
+      PLATFORM_FEE_MIN_SATS: ${PLATFORM_FEE_MIN_SATS:-1}
+      PLATFORM_FEE_MAX_SATS: ${PLATFORM_FEE_MAX_SATS:-1000}
+
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
-      - ./core/data:/app/data
-      # In production, mount the real LND data directory read-only:
-      # - /home/conduit/.lnd:/lnd:ro
+      # Your node's credentials — read-only, never leave your machine.
+      - ./secrets/admin.macaroon:/run/secrets/admin.macaroon:ro
+      - ./secrets/tls.cert:/run/secrets/tls.cert:ro
+    # Lets the api container reach an LND running on this host as
+    # host.docker.internal (Linux). Harmless if your LND is remote.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  pgdata:

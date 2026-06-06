@@ -1,7 +1,8 @@
 # Quickstart
 
-Five minutes to your first Lightning payment from an AI agent. Runs entirely
-against a local mock-LND so no real Bitcoin moves.
+Five minutes to your first Lightning payment from an AI agent. You run Conduit
+yourself — this quickstart runs entirely against a local mock-LND, so no real
+Bitcoin moves until you point Conduit at an LND node of your own.
 
 ## 1. Run the Core API locally
 
@@ -15,11 +16,13 @@ Verify it's up:
 
 ```bash
 curl http://localhost:8000/v1/health
-# {"ok":true,"version":"0.6.0","network":"testnet"}
+# {"ok":true,"version":"0.7.0","network":"testnet"}
 ```
 
 The dev container ships with `LND_MOCK=true` and a bootstrap admin key
-`ck_test_dev_root`.
+`ck_test_dev_root`. That bootstrap key is **your** master key to **your own**
+system — it's how you mint the scoped keys you hand to agents. In production you
+set your own via `BOOTSTRAP_API_KEY`.
 
 ## 2. Install the SDK
 
@@ -73,8 +76,25 @@ Now any payment over 200 sats, or to a non-allowlisted destination, or
 without a memo, will be rejected by the policy engine — before it ever
 reaches the Lightning Network.
 
+## 5. (Optional) Set your platform fee
+
+Conduit's built-in revenue is a per-transaction **platform fee in sats** that
+**you** configure as the operator. Add it on top of every payment and keep it on
+settle (refunded in full on failure):
+
+```bash
+PLATFORM_FEE_PERCENT=0.5   # 0.5% of the payment amount (default)
+PLATFORM_FEE_MIN_SATS=1    # never less than 1 sat
+PLATFORM_FEE_MAX_SATS=1000 # never more than 1000 sats
+```
+
+Each payment receipt then reports a `platform_fee_sats` (your revenue) separate
+from `fee_sats` (the LND routing fee). Set `PLATFORM_FEE_PERCENT=0` to disable.
+
 ## Next
 
 - [Concepts → Policies](concepts/policies.md) — what the engine actually checks
+- [Concepts → Security](concepts/security.md) — the self-hosted, non-custodial trust model
+- [Platform fees](api/fees.md) — your configurable per-transaction revenue
 - [SDKs → MCP](sdk/mcp.md) — plug into Claude Desktop or any MCP client
-- [Going to production](https://github.com/Jake1848/conduit/blob/main/infra/README.md) — the Hetzner runbook
+- [Going to production](https://github.com/Jake1848/conduit/blob/main/infra/README.md) — the runbook for your own node

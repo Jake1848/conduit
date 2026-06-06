@@ -29,6 +29,7 @@ export interface Receipt {
   hash: string | null;
   amountSats: number;
   feeSats: number;
+  platformFeeSats: number;
   settledInMs: number | null;
   destination: string | null;
   memo: string | null;
@@ -70,6 +71,7 @@ function fromReceipt(r: ReceiptJSON): Receipt {
     hash: r.hash,
     amountSats: r.amount_sats,
     feeSats: r.fee_sats,
+    platformFeeSats: r.platform_fee_sats ?? 0,
     settledInMs: r.settled_in_ms,
     destination: r.destination,
     memo: r.memo,

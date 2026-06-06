@@ -10,10 +10,12 @@ export function BarChart({
   data,
   labels,
   height = 200,
+  unit = "tx/h",
 }: {
   data: number[];
   labels: string[];
   height?: number;
+  unit?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<ChartType | null>(null);
@@ -54,7 +56,7 @@ export function BarChart({
             bodyFont: { family: "JetBrains Mono" },
             padding: 10,
             displayColors: false,
-            callbacks: { title: () => "", label: (c) => (c.parsed.y ?? 0).toLocaleString() + " tx/h" },
+            callbacks: { title: () => "", label: (c) => (c.parsed.y ?? 0).toLocaleString() + " " + unit },
           },
         },
         scales: {
@@ -83,7 +85,7 @@ export function BarChart({
     return () => {
       chartRef.current?.destroy();
     };
-  }, [data, labels, height]);
+  }, [data, labels, height, unit]);
 
   return (
     <div className="chart-box" style={{ height }}>

@@ -836,6 +836,86 @@ img, svg { display: block; max-width: 100%; }
 .case-card .demo .v { color: var(--accent); font-weight: 600; }
 @media (max-width: 880px) { .cases-grid { grid-template-columns: 1fr; } }
 
+/* ============ PRICING ============ */
+.pricing .pricing-lede {
+  max-width: 620px;
+  margin-top: 18px;
+  font-size: 16px; line-height: 1.6;
+  color: var(--t-2); text-wrap: pretty;
+}
+.fee-card {
+  position: relative;
+  margin: 48px auto 0;
+  max-width: 720px;
+  padding: 40px clamp(24px, 5vw, 56px) 36px;
+  text-align: center;
+  background: var(--glass-bg);
+  border: var(--glass-bd);
+  border-radius: 20px;
+  box-shadow: var(--glass-sh);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+.fee-card::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 16px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,224,138,0.6), transparent);
+}
+.fee-card .fee-tag {
+  font-family: var(--f-mono); font-size: 10px;
+  letter-spacing: 0.22em; color: var(--gold-2);
+  text-transform: uppercase;
+}
+.fee-card .fee-headline {
+  margin-top: 18px;
+  font-family: var(--f-display); font-weight: 700;
+  font-size: clamp(26px, 4vw, 38px); letter-spacing: -0.02em;
+  color: var(--t-1);
+}
+.fee-card .fee-num {
+  color: var(--gold-1);
+  text-shadow: 0 0 24px rgba(212,160,23,0.45);
+}
+.fee-bounds {
+  margin: 26px auto 0;
+  display: flex; align-items: center; justify-content: center; gap: clamp(24px, 6vw, 56px);
+}
+.fee-bound { display: flex; flex-direction: column; gap: 6px; }
+.fee-bound .fee-bound-v {
+  font-family: var(--f-display); font-weight: 700;
+  font-size: clamp(20px, 3vw, 26px); color: var(--gold-1);
+}
+.fee-bound .fee-bound-l {
+  font-family: var(--f-mono); font-size: 10px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--t-3);
+}
+.fee-bound-sep { width: 1px; height: 42px; background: var(--line-gold); }
+.fee-card .fee-note {
+  margin: 26px auto 0;
+  max-width: 560px;
+  font-size: 13px; line-height: 1.6;
+  color: var(--t-2); text-wrap: pretty;
+}
+.fee-card .fee-note code {
+  font-family: var(--f-mono); font-size: 11.5px;
+  color: var(--gold-1);
+  background: rgba(212,160,23,0.08);
+  border: 1px solid var(--line-gold);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.pricing-grid { margin-top: 28px; }
+.pricing-grid.feature-grid { grid-template-columns: repeat(3, 1fr); }
+.pricing-cta {
+  margin-top: 44px;
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+}
+@media (max-width: 980px) { .pricing-grid.feature-grid { grid-template-columns: 1fr; } }
+@media (max-width: 520px) {
+  .fee-bounds { gap: 28px; }
+  .fee-bound-sep { display: none; }
+}
+
 /* ============ SECURITY ============ */
 .security {
   display: grid;

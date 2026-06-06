@@ -56,6 +56,14 @@ class Settings(BaseSettings):
         3600, alias="IDEMPOTENCY_PRUNE_INTERVAL_SECONDS"
     )
 
+    # Platform fee — the Conduit operator's revenue on every SUCCESSFUL outbound
+    # payment. Percentage of the payment amount, clamped to [min, max] sats. This
+    # is SEPARATE from the LND routing-fee budget (that pays Lightning nodes; this
+    # is retained by the operator's node). Set PLATFORM_FEE_PERCENT=0 to disable.
+    platform_fee_percent: float = Field(0.5, alias="PLATFORM_FEE_PERCENT")
+    platform_fee_min_sats: int = Field(1, alias="PLATFORM_FEE_MIN_SATS")
+    platform_fee_max_sats: int = Field(1000, alias="PLATFORM_FEE_MAX_SATS")
+
     @field_validator("env", mode="after")
     @classmethod
     def _normalize_env(cls, v: str) -> str:

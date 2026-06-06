@@ -7,6 +7,7 @@ import type {
   ApiKey,
   ApiKeyCreated,
   Balance,
+  Fees,
   Health,
   Invoice,
   LedgerResult,
@@ -17,11 +18,19 @@ import type {
   Webhook,
 } from "./types";
 
-export const API_BASE = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002"
-).replace(/\/$/, "");
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+/** Compile-time default base URL (from env at build, falls back to the hosted demo).
+ *  At runtime the operator-configured apiUrl in localStorage takes precedence so the
+ *  same dashboard build can drive ANY self-hosted Conduit instance. */
+export const DEFAULT_API_BASE = normalizeUrl(
+  process.env.NEXT_PUBLIC_API_URL || "https://api.conduit.energy",
+);
 
 const KEY_STORAGE = "conduit_api_key";
+const URL_STORAGE = "conduit_api_url";
 
 export function getStoredKey(): string | null {
   if (typeof window === "undefined") return null;
@@ -32,6 +41,22 @@ export function setStoredKey(key: string): void {
 }
 export function clearStoredKey(): void {
   if (typeof window !== "undefined") window.localStorage.removeItem(KEY_STORAGE);
+}
+
+/** Operator-configured API base URL (persisted in localStorage). Falls back to the
+ *  build-time default. This is the base for ALL API calls. */
+export function getStoredApiUrl(): string {
+  if (typeof window === "undefined") return DEFAULT_API_BASE;
+  const stored = window.localStorage.getItem(URL_STORAGE);
+  return stored ? normalizeUrl(stored) : DEFAULT_API_BASE;
+}
+export function setStoredApiUrl(url: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(URL_STORAGE, normalizeUrl(url));
+  }
+}
+export function clearStoredApiUrl(): void {
+  if (typeof window !== "undefined") window.localStorage.removeItem(URL_STORAGE);
 }
 
 export class ApiError extends Error {
@@ -49,12 +74,14 @@ interface RequestOpts {
   method?: string;
   body?: unknown;
   key?: string; // override the stored key (used during login probing)
+  baseUrl?: string; // override the stored API URL (used during login probing)
   idempotencyKey?: string;
   signal?: AbortSignal;
 }
 
 async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const key = opts.key ?? getStoredKey();
+  const base = opts.baseUrl ? normalizeUrl(opts.baseUrl) : getStoredApiUrl();
   const headers: Record<string, string> = {};
   if (key) headers["Authorization"] = `Bearer ${key}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
@@ -62,14 +89,14 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       method: opts.method || "GET",
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: opts.signal,
     });
   } catch (e) {
-    throw new ApiError(0, "NETWORK", `Cannot reach the Conduit API at ${API_BASE}. ${(e as Error).message}`);
+    throw new ApiError(0, "NETWORK", `Cannot reach the Conduit API at ${base}. ${(e as Error).message}`);
   }
 
   if (res.status === 204) return undefined as T;
@@ -130,6 +157,9 @@ export const api = {
 
   // ---- fleet metrics + global feed (server-aggregated; no per-agent fan-out) ----
   getMetrics: (signal?: AbortSignal) => request<Metrics>("/v1/metrics", { signal }),
+
+  // ---- platform-fee revenue (admin-scope key required) ----
+  getFees: (signal?: AbortSignal) => request<Fees>("/v1/fees", { signal }),
   getRecentTransactions: (limit = 50, signal?: AbortSignal) =>
     request<{ data: Transaction[]; has_more: boolean }>(
       `/v1/transactions/recent?limit=${limit}`,

@@ -110,7 +110,8 @@ class ReceiptOut(BaseModel):
     status: TxStatus
     hash: str | None = Field(None, description="Payment hash (hex)")
     amount_sats: int
-    fee_sats: int
+    fee_sats: int = Field(0, description="LND routing fee (budget while pending, actual on settle)")
+    platform_fee_sats: int = Field(0, description="Conduit operator platform fee (revenue)")
     settled_in_ms: int | None = None
     destination: str | None = None
     memo: str | None = None
@@ -260,3 +261,20 @@ class MetricsOut(BaseModel):
     p99_settlement_ms: int | None
     hourly: list[HourBucket]      # 24 buckets, oldest → newest
     top_agents: list[TopAgentOut]  # most active today
+    fee_revenue_total_sats: int = 0   # platform fees collected, all-time
+    fee_revenue_today_sats: int = 0   # platform fees collected since 00:00 UTC
+
+
+# ---------- Platform fees (operator revenue) ----------
+
+class FeeDayBucket(BaseModel):
+    date: str          # YYYY-MM-DD (UTC)
+    sats: int
+    tx_count: int
+
+
+class FeesOut(BaseModel):
+    total_collected_sats: int
+    total_collected_btc: float
+    today_sats: int
+    fees_by_day: list[FeeDayBucket]  # most recent first

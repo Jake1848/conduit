@@ -142,11 +142,18 @@ async def credit_agent(
     session: AsyncSession = Depends(get_session),
     _=Depends(require_scope("admin")),
 ) -> LedgerAdjustOut:
-    """Operator-initiated deposit. Used to top up an agent's allowance.
+    """Operator-initiated deposit on the operator's own node (non-custodial).
 
-    In a fully-automated deployment this is fired by the invoice settlement
+    Conduit is self-hosted: the operator runs it in front of their own LND node,
+    so this endpoint lets that operator top up one of THEIR OWN agents' virtual
+    allowance from THEIR OWN node's liquidity. It is a ledger entry, not a
+    transfer of custody to Conduit — the sats stay in the operator's channels.
+    The bootstrap/admin key required here is the operator's master key to their
+    own system.
+
+    In a fully-automated deployment this is also fired by the invoice settlement
     watcher when an inbound Lightning payment arrives addressed to the agent.
-    For now it's also the manual top-up endpoint.
+    Otherwise it's the manual top-up endpoint.
     """
     try:
         agent = await _locked_agent(session, agent_id)
@@ -177,9 +184,14 @@ async def debit_agent(
     session: AsyncSession = Depends(get_session),
     _=Depends(require_scope("admin")),
 ) -> LedgerAdjustOut:
-    """Operator-initiated withdrawal — sweep funds back to the operator wallet
-    without going through the Lightning payment path. Useful for treasury moves
-    that shouldn't burn an HTLC.
+    """Operator-initiated withdrawal on the operator's own node (non-custodial).
+
+    The self-hosted operator sweeps funds out of one of THEIR OWN agents' virtual
+    balance, back to their own treasury, without going through the Lightning
+    payment path — useful for treasury moves on their own node that shouldn't
+    burn an HTLC. Like credit, this is a ledger adjustment, not a custody change;
+    the underlying sats never leave the operator's control. Requires the
+    operator's admin/master key.
     """
     try:
         agent = await _locked_agent(session, agent_id)

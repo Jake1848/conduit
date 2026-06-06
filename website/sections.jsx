@@ -113,10 +113,11 @@ function Nav() {
         <a href="#sdk">Developers</a>
         <a href="#console">Console</a>
         <a href="#cases">Use Cases</a>
+        <a href="#pricing">Pricing</a>
         <a href="#security">Security</a>
       </div>
       <Magnetic strength={6}>
-        <a className="nav-cta" href="#final">Request Access</a>
+        <a className="nav-cta" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">Get Started</a>
       </Magnetic>
       <button className="nav-burger" aria-label="Open menu"><span /></button>
     </nav>
@@ -160,16 +161,16 @@ function Hero() {
           <span className="gold">{ms}ms</span>
         </div>
         <h1 data-reveal data-rd="1">
-          Autonomous AI<br />
-          needs <span className="em">autonomous</span><br />
-          money.
+          Give your AI agents<br />
+          <span className="em">Bitcoin</span> wallets.<br />
+          Self-hosted.
         </h1>
         <p className="hero-sub" data-reveal data-rd="2">
-          Conduit gives AI agents Bitcoin-native wallets, Lightning settlement, programmable spending controls, and machine-to-machine payments — <em>without banks, cards, or human permission.</em>
+          Conduit is an open-source SDK that gives AI agents Lightning wallets, programmable spending controls, and machine-to-machine payments — running on <em>your own node, with your own keys.</em> Self-custody by default. Conduit never touches your funds.
         </p>
         <div className="hero-actions" data-reveal data-rd="3">
           <Magnetic strength={8}>
-            <a className="btn btn-primary" href="#final">Request Early Access <span className="btn-arrow">→</span></a>
+            <a className="btn btn-primary" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">Get Started <span className="btn-arrow">→</span></a>
           </Magnetic>
           <Magnetic strength={8}>
             <a className="btn btn-ghost" href="#sdk">Read the Docs</a>
@@ -281,14 +282,14 @@ function Layer() {
   ];
   const features = [
     { n: '01', t: 'Agent Wallets',
-      b: 'Spin up non-custodial Bitcoin wallets in one API call. Each agent gets its own keys, its own ledger, its own identity — no human required.',
-      tg: 'Wallet · Keys · Identity' },
+      b: 'Spin up non-custodial Lightning wallets in one API call, backed by your own LND node. Each agent gets its own keys, its own ledger, its own identity — and you hold every key.',
+      tg: 'Your Keys · Self-Custody' },
     { n: '02', t: 'Spending Policies',
-      b: 'Declarative budgets, allowlists, velocity limits, and counterparty rules — enforced server-side before any sats leave the wallet.',
+      b: 'Declarative budgets, allowlists, velocity limits, and counterparty rules — enforced by your Conduit deployment before any sats leave the wallet.',
       tg: 'Limits · Rules · Override' },
     { n: '03', t: 'Lightning Settlement',
-      b: 'Sub-second, sub-cent payments routed through our managed Lightning mesh. We handle channel liquidity so your agents do not have to.',
-      tg: 'Sub-50ms · Routed · Managed' },
+      b: 'Sub-second, sub-cent payments routed straight through your own LND node. Your channels, your liquidity, your rules — Conduit never sits in the path of your funds.',
+      tg: 'Sub-50ms · Your Node' },
     { n: '04', t: 'Bitcoin Finality',
       b: 'Every transaction lands on the most credibly neutral monetary network in existence. No issuer, no chargebacks, no permission.',
       tg: 'Mainnet · Final · Neutral' },
@@ -297,7 +298,7 @@ function Layer() {
     <section className="section col" id="layer">
       <div className="layer-head" data-reveal>
         <div className="eyebrow">02 — The Conduit Layer</div>
-        <h2>The monetary operating layer<br />for <em>autonomous</em> machines.</h2>
+        <h2>Self-hosted payment rails<br />for <em>autonomous</em> machines.</h2>
       </div>
       <div className="pipeline" data-reveal data-rd="1">
         <span className="pipe-pulse" />
@@ -335,9 +336,9 @@ const SDK_SAMPLES = {
     { c: 'pun', t: '    policy=' }, { c: 'cls', t: 'Policy' }, { c: 'pun', t: '(' }, { c: 'pun', t: 'max_per_hour=' }, { c: 'num', t: '10_000' }, { c: 'pun', t: '),' }, 'NL',
     { c: 'pun', t: ')' }, 'NL',
     null,
-    { c: 'com', t: '# pay another agent over Lightning, settled to Bitcoin' }, 'NL',
+    { c: 'com', t: '# pay another agent over your own LND node' }, 'NL',
     { c: 'pun', t: 'receipt = agent.' }, { c: 'fn', t: 'pay' }, { c: 'pun', t: '(' }, 'NL',
-    { c: 'pun', t: '    to=' }, { c: 'str', t: '"compute-node-7@lnd.conduit.energy"' }, { c: 'pun', t: ',' }, 'NL',
+    { c: 'pun', t: '    to=' }, { c: 'str', t: '"compute-node-7@your-lnd.example.com"' }, { c: 'pun', t: ',' }, 'NL',
     { c: 'pun', t: '    sats=' }, { c: 'num', t: '150' }, { c: 'pun', t: ',' }, 'NL',
     { c: 'pun', t: '    memo=' }, { c: 'str', t: '"inference · 1.2K tokens"' }, { c: 'pun', t: ',' }, 'NL',
     { c: 'pun', t: ')' }, 'NL',
@@ -385,14 +386,14 @@ function SDK() {
       <div className="sdk-copy" data-reveal>
         <div className="eyebrow">03 — Developer SDK</div>
         <h2>Five lines of code.<br /><em>First payment.</em></h2>
-        <p>Drop the Conduit SDK into any agent runtime. Issue a wallet, attach a policy, send sats. The whole loop — wallet creation, signature, route, settlement — happens before your model finishes its next token.</p>
+        <p>Drop the Conduit SDK into any agent runtime and point it at your own LND node. Issue a wallet, attach a policy, send sats. The whole loop — wallet creation, signature, route, settlement — runs on your infrastructure, before your model finishes its next token.</p>
         <div className="lang-badges">
           {langs.map(l => (
             <button key={l} className={'lang-badge' + (l === lang ? ' active' : '')} onClick={() => setLang(l)}>{l}</button>
           ))}
         </div>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="#"><span>View on GitHub</span> <span className="btn-arrow">↗</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener"><span>View on GitHub</span> <span className="btn-arrow">↗</span></a>
         </Magnetic>
       </div>
 
@@ -440,8 +441,8 @@ function Cases() {
       p: 'Agents transact with other agents — buying data, hiring services, settling deals — directly, without intermediaries. A native economy for software.',
       demo: { l: 'MEAN TX',       v: '~ 2,400 sats · 41ms' } },
     { c: 'amber',  badge: 'AMBER · 04',  tag: '/ TREASURY',       t: 'Autonomous Treasury',
-      p: 'Each agent holds, allocates, and rebalances its own balance sheet within rules you define. Programmable cashflow without a human in the loop.',
-      demo: { l: 'MANAGED',       v: '$48.2M · 12,840 wallets' } },
+      p: 'Each agent holds, allocates, and rebalances its own balance sheet within rules you define. Programmable cashflow without a human in the loop — and every sat stays on your node.',
+      demo: { l: 'SELF-CUSTODIED', v: '$48.2M · 12,840 wallets' } },
   ];
   return (
     <section className="section col" id="cases">
@@ -465,6 +466,67 @@ function Cases() {
             </div>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/* ----------------------- PRICING ----------------------- */
+function Pricing() {
+  const props = [
+    { n: '01', t: 'Your node, your keys, your rules',
+      b: 'Conduit runs on your own infrastructure, against your own LND node, with your own keys. It is software tooling — it never touches your funds. Self-custody by default, fail-closed by design.',
+      tg: 'Self-Hosted · Non-Custodial' },
+    { n: '02', t: 'Usage-based pricing — pay per transaction in sats',
+      b: 'No subscriptions. No fiat. No cards. A small per-transaction platform fee in satoshis is built into the payment flow and configured by whoever deploys Conduit. You only pay when value moves.',
+      tg: 'Sats Only · No Subscription' },
+    { n: '03', t: '5-minute deploy with Docker',
+      b: 'Clone the repo, set your env, run one Docker command, and point Conduit at your LND node. You are issuing agent wallets and settling payments in minutes — entirely on your own boxes.',
+      tg: 'Docker · Open Source · MIT' },
+  ];
+  return (
+    <section className="section col pricing" id="pricing">
+      <div className="layer-head" data-reveal>
+        <div className="eyebrow">06 — Pricing</div>
+        <h2>Usage-based pricing.<br /><em>Pay per transaction</em> in sats.</h2>
+        <p className="pricing-lede">No subscriptions, no fiat, no Stripe. Conduit charges a small platform fee in satoshis on each payment — built right into the flow and fully configurable by the operator who deploys it.</p>
+      </div>
+
+      <div className="fee-card" data-reveal data-rd="1">
+        <div className="fee-tag">PLATFORM FEE · PER TRANSACTION</div>
+        <div className="fee-headline"><span className="fee-num">0.5%</span> per transaction</div>
+        <div className="fee-bounds">
+          <div className="fee-bound">
+            <span className="fee-bound-v">1 sat</span>
+            <span className="fee-bound-l">minimum</span>
+          </div>
+          <div className="fee-bound-sep" />
+          <div className="fee-bound">
+            <span className="fee-bound-v">1,000 sat</span>
+            <span className="fee-bound-l">cap</span>
+          </div>
+        </div>
+        <p className="fee-note">Charged on top of the payment, kept on settle, and refunded in full if the payment fails. Defaults are configurable per deployment via <code>PLATFORM_FEE_PERCENT</code>, <code>PLATFORM_FEE_MIN_SATS</code>, and <code>PLATFORM_FEE_MAX_SATS</code>.</p>
+      </div>
+
+      <div className="feature-grid pricing-grid">
+        {props.map((f, i) => (
+          <article className="feature-card" key={f.t} data-reveal data-rd={(i % 3) + 1}>
+            <div className="num">{f.n} / WHY CONDUIT</div>
+            <h3>{f.t}</h3>
+            <p>{f.b}</p>
+            <div className="tag">{f.tg}</div>
+          </article>
+        ))}
+      </div>
+
+      <div className="pricing-cta" data-reveal data-rd="2">
+        <Magnetic strength={8}>
+          <a className="btn btn-primary" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">Get Started <span className="btn-arrow">→</span></a>
+        </Magnetic>
+        <Magnetic strength={8}>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener"><span>Read the Quickstart</span> <span className="btn-arrow">↗</span></a>
+        </Magnetic>
       </div>
     </section>
   );
@@ -495,11 +557,11 @@ function Security() {
   return (
     <section className="section col security" id="security">
       <div className="security-copy" data-reveal>
-        <div className="eyebrow">06 — Controls</div>
+        <div className="eyebrow">07 — Controls</div>
         <h2>Give every agent a wallet,<br />a budget, and <em>rules.</em></h2>
-        <p>Autonomy without limits is a liability. Conduit policy engine evaluates every outbound payment against your declared spending rules before a signature ever happens — and gives you the kill switch if something looks wrong.</p>
+        <p>Autonomy without limits is a liability. Your Conduit deployment evaluates every outbound payment against your declared spending rules before a signature ever happens — and gives you the kill switch if something looks wrong. Fail-closed by default.</p>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="#"><span>Read the threat model</span> <span className="btn-arrow">↗</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener"><span>Read the threat model</span> <span className="btn-arrow">↗</span></a>
         </Magnetic>
       </div>
       <div className="security-grid">
@@ -521,9 +583,9 @@ function Vision() {
     <section className="section vision col">
       <div className="rule" data-reveal />
       <blockquote data-reveal data-rd="1">
-        Built on <span className="gold">Bitcoin.</span><br />
-        Routed through <span className="gold">Lightning.</span><br />
-        Controlled by <span className="gold">Conduit.</span>
+        Your <span className="gold">node.</span><br />
+        Your <span className="gold">keys.</span><br />
+        Your <span className="gold">rules.</span>
       </blockquote>
       <div className="rule" data-reveal data-rd="2" />
       <div className="wordmark" data-reveal data-rd="3">C O N D U I T &nbsp; · &nbsp; E N E R G Y</div>
@@ -535,15 +597,15 @@ function Vision() {
 function Final() {
   return (
     <section className="section final col" id="final">
-      <div className="eyebrow" data-reveal style={{ justifyContent: 'center' }}>07 — Build with Us</div>
-      <h2 data-reveal data-rd="1" style={{ marginTop: 22 }}>The machine economy needs a monetary layer.</h2>
-      <p className="ser" data-reveal data-rd="2"><em>Build it on Bitcoin.</em> Route it through Conduit.</p>
+      <div className="eyebrow" data-reveal style={{ justifyContent: 'center' }}>08 — Get Started</div>
+      <h2 data-reveal data-rd="1" style={{ marginTop: 22 }}>Deploy Conduit in five minutes.</h2>
+      <p className="ser" data-reveal data-rd="2"><em>Your node, your keys, your rules.</em> Clone the repo, run one Docker command, point it at your LND node.</p>
       <div className="final-actions" data-reveal data-rd="3">
         <Magnetic strength={8}>
-          <a className="btn btn-primary" href="#"><span>Request Early Access</span> <span className="btn-arrow">→</span></a>
+          <a className="btn btn-primary" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener"><span>Get Started on GitHub</span> <span className="btn-arrow">→</span></a>
         </Magnetic>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="#"><span>Read the Docs</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener"><span>Read the Quickstart</span></a>
         </Magnetic>
       </div>
     </section>
@@ -560,20 +622,22 @@ function Footer() {
       </div>
       <div className="copy">
         <div>conduit.energy</div>
-        <div className="dim">Bitcoin payment infrastructure for autonomous machines</div>
+        <div className="dim">Self-hosted, self-custody Bitcoin wallets for autonomous AI agents</div>
+        <div className="dim">Your node, your keys, your rules · MIT licensed</div>
         <div className="dim">© 2026 Conduit Labs</div>
       </div>
       <div className="links">
-        <a href="#">GitHub</a>
-        <a href="#">Docs</a>
-        <a href="#">Whitepaper</a>
-        <a href="#">X</a>
+        <a href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Quickstart</a>
+        <a href="#pricing">Pricing</a>
       </div>
     </footer>
   );
 }
 
 window.Cases = Cases;
+window.Pricing = Pricing;
 window.Security = Security;
 window.Vision = Vision;
 window.Final = Final;

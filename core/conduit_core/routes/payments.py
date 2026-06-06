@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_scope
+from ..config import get_settings
 from ..db import get_session
 from ..db.models import Agent, APIKey, Policy, Transaction
 from ..errors import (
@@ -25,6 +26,7 @@ from ..errors import (
 )
 from ..schemas import PaymentPayIn, PaymentSendIn, ReceiptOut
 from ..services import idempotency
+from ..services.fees import compute_platform_fee
 from ..services.ids import tx_id as new_tx_id
 from ..services.lnd import get_lnd
 from ..services.policy_engine import PaymentRequest, PolicyEngine
@@ -137,7 +139,17 @@ async def _execute_payment(
     same preimage in `keysend_preimage` so LND uses it).
     """
     fee_budget = _estimate_max_fee_sats(sats)
-    debit_total = sats + fee_budget
+    # Platform fee = the operator's revenue, charged ON TOP of the payment and the
+    # routing budget. Debited up-front with everything else; refunded together with
+    # the rest on failure (Phase 3a / reconciler) and KEPT on success (Phase 3b).
+    settings = get_settings()
+    platform_fee = compute_platform_fee(
+        sats,
+        settings.platform_fee_percent,
+        settings.platform_fee_min_sats,
+        settings.platform_fee_max_sats,
+    )
+    debit_total = sats + fee_budget + platform_fee
 
     # ----- Phase 1: locked decision + debit + pending row -----
     # SQLAlchemy 2.0 implicitly begins a transaction on the first query.
@@ -188,8 +200,8 @@ async def _execute_payment(
         if (agent.balance_sats or 0) < debit_total:
             raise InsufficientBalance(
                 f"Agent balance {agent.balance_sats} sats < required {debit_total} "
-                f"({sats} + {fee_budget} fee budget). Credit the agent via "
-                f"POST /v1/agents/{agent_id}/credit before retrying.",
+                f"({sats} + {fee_budget} routing budget + {platform_fee} platform fee). "
+                f"Credit the agent via POST /v1/agents/{agent_id}/credit before retrying.",
                 agent_id=agent_id,
                 balance_sats=agent.balance_sats or 0,
                 required_sats=debit_total,
@@ -203,6 +215,7 @@ async def _execute_payment(
             direction="send",
             amount_sats=sats,
             fee_sats=fee_budget,  # reserved budget; corrected to actual on settle
+            platform_fee_sats=platform_fee,  # operator revenue; kept on settle, refunded on fail
             destination=destination,
             payment_request=invoice,
             payment_hash=payment_hash,  # known up-front so reconciler can find it
@@ -348,6 +361,7 @@ async def _execute_payment(
         hash=result.payment_hash,
         amount_sats=sats,
         fee_sats=actual_fee,
+        platform_fee_sats=platform_fee,
         settled_in_ms=result.latency_ms,
         destination=destination,
         memo=memo,
@@ -518,6 +532,7 @@ async def get_payment(
         hash=tx.payment_hash,
         amount_sats=tx.amount_sats,
         fee_sats=tx.fee_sats,
+        platform_fee_sats=tx.platform_fee_sats,
         settled_in_ms=tx.latency_ms,
         destination=tx.destination,
         memo=tx.memo,
