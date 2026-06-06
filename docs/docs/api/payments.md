@@ -25,12 +25,20 @@ Returns a `Receipt`:
   "hash": "<64 hex chars>",
   "amount_sats": 500,
   "fee_sats": 2,
+  "platform_fee_sats": 3,
   "settled_in_ms": 47,
   "destination": "alice@strike.me",
   "memo": "lunch",
   "created_at": "2026-05-25T00:00:00Z"
 }
 ```
+
+- **`fee_sats`** — the Lightning routing fee LND paid to route the payment.
+- **`platform_fee_sats`** — the operator's configurable revenue. This is charged
+  **on top of** `amount_sats`, debited from the agent on send, kept by the
+  operator when the payment settles, and **refunded in full** if the payment
+  fails. It is computed from your `PLATFORM_FEE_*` settings and is separate from
+  the LND routing fee. See [Platform fees](fees.md).
 
 ## Send (BOLT11 or keysend)
 
@@ -95,3 +103,5 @@ for the `idempotency_key` / `idempotencyKey` override.
 ## Get one
 
 `GET /v1/payments/{payment_id}` — requires `read`
+
+Returns the same `Receipt` shape as above, including `platform_fee_sats`.

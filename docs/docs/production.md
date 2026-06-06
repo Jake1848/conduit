@@ -1,8 +1,10 @@
 # Production deployment
 
-The dev path (`docker compose up` with SQLite + mock LND) is for local work
-only. Production has a few hard requirements enforced at startup — if any
-is missing, the app refuses to boot rather than running insecurely.
+Conduit is self-hosted: in production you run it against **your own** LND node,
+with **your own** keys. The dev path (`docker compose up` with SQLite + mock
+LND) is for local work only. Production has a few hard requirements enforced at
+startup — if any is missing, the app refuses to boot rather than running
+insecurely.
 
 ## Required env vars
 
@@ -12,13 +14,29 @@ is missing, the app refuses to boot rather than running insecurely.
 | `CONDUIT_NETWORK=mainnet` | also `testnet`, `signet`, `regtest` |
 | `DATABASE_URL=postgresql+asyncpg://…` | SQLite is rejected in production |
 | `API_SECRET_KEY` | 64+ random hex chars (`openssl rand -hex 32`); used as the HMAC pepper for `X-Conduit-Server-Signature` |
-| `BOOTSTRAP_API_KEY` | the first admin key; **shown once** at boot, must match the network prefix (`ck_live_…` on mainnet) |
+| `BOOTSTRAP_API_KEY` | **your master key** — the first admin key for your own instance; **shown once** at boot, must match the network prefix (`ck_live_…` on mainnet). Guard it like the LND macaroon. |
 | `ALLOWED_ORIGINS` | comma-separated CORS allowlist; empty means no cross-origin |
-| `LND_MOCK=false` | required for real Lightning |
-| `LND_REST_URL`, `LND_MACAROON_PATH`, `LND_TLS_CERT_PATH` | reach a real LND |
+| `LND_MOCK=false` | required to reach **your** real LND |
+| `LND_REST_URL`, `LND_MACAROON_PATH`, `LND_TLS_CERT_PATH` | reach **your own** LND |
 
 Optional rate-limit tuning: `RATE_LIMIT_PER_MINUTE` (default 300),
 `RATE_LIMIT_BURST` (default 60).
+
+## Platform fee (your revenue)
+
+Conduit's built-in monetization is a per-transaction **platform fee in sats**
+that **you**, the operator, configure. It is added on top of each payment, kept
+when the payment settles, and refunded in full if the payment fails — it is your
+revenue, not a Conduit cut.
+
+| var | default | meaning |
+| --- | ------- | ------- |
+| `PLATFORM_FEE_PERCENT`  | `0.5`  | fee as a percent of the payment amount (0.5 = 0.5%); set `0` to disable |
+| `PLATFORM_FEE_MIN_SATS` | `1`    | floor for the per-transaction fee |
+| `PLATFORM_FEE_MAX_SATS` | `1000` | ceiling for the per-transaction fee |
+
+Collected fees are reported at `GET /v1/fees` (admin) and surfaced in
+`GET /v1/metrics`. See the [Platform fees API](api/fees.md).
 
 ## Migrations
 
@@ -82,10 +100,13 @@ per-invoice errors are logged but never crash the loop.
 
 ## Security checklist
 
-- [ ] LND seed phrase stored on paper, off the VPS
+Conduit never holds your funds — these steps keep the node and keys **you** own
+under your control.
+
+- [ ] **Your** LND seed phrase stored on paper, off the VPS
 - [ ] LND gRPC (`10009`) and REST (`8080`) **never** exposed by UFW
 - [ ] `secrets/admin.macaroon` is mode 600 and owned by the deploy user
-- [ ] `API_SECRET_KEY` and `BOOTSTRAP_API_KEY` are unique to this deployment
+- [ ] `API_SECRET_KEY` and `BOOTSTRAP_API_KEY` (your master key) are unique to this deployment
 - [ ] `ALLOWED_ORIGINS` lists only your own domains (or is empty)
 - [ ] HTTPS-only — certbot renewal cron is in place
 - [ ] Postgres password is in `.env.prod` only, not in compose YAML or git

@@ -206,7 +206,8 @@ async def test_lnd_error_leaves_pending_no_refund(client, monkeypatch):
 
     # Balance is NOT refunded — the LND payment may still settle.
     bal_after = (await client.get(f"/v1/agents/{agent_id}/balance")).json()
-    assert bal_after["available_sats"] == 10_000 - 505  # 500 + 1% fee budget
+    # 500 payment + 5 routing budget (1%) + 2 platform fee (0.5%, round(2.5)=2).
+    assert bal_after["available_sats"] == 10_000 - 507
 
     # The tx is still pending with the reconciliation marker.
     r = await client.get(f"/v1/transactions/{tx_id}")

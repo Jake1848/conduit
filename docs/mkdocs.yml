@@ -40,6 +40,7 @@ nav:
       - Invoices: api/invoices.md
       - Transactions: api/transactions.md
       - Metrics: api/metrics.md
+      - Platform fees: api/fees.md
       - Webhooks: api/webhooks.md
   - Reference:
       - Errors: reference/errors.md

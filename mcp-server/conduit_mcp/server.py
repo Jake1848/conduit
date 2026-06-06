@@ -1,24 +1,29 @@
-"""MCP server exposing Conduit as tools.
+"""MCP server exposing a self-hosted Conduit instance as tools.
 
 Any MCP-compatible client (Claude Desktop, Cursor, custom agents) can invoke
-these tools to make Bitcoin Lightning payments through a Conduit-managed
-agent wallet. All payments are still gated by the spending policy attached
+these tools to make Bitcoin Lightning payments through a Conduit agent wallet.
+Conduit is self-hosted and non-custodial: this server talks to the CUSTOMER's
+OWN Conduit deployment — the base URL and API key you configure point at the
+instance you run against your own LND node, with your own keys. Conduit never
+touches your funds. All payments are still gated by the spending policy attached
 to the wallet — the AI cannot override it.
 
-Tools:
-  conduit_create_wallet   — provision a new agent wallet with a daily limit
-  conduit_attach_policy   — configure spending controls on a wallet
-  conduit_balance         — check current balance
-  conduit_pay             — send a payment (Lightning address or BOLT11)
-  conduit_receive         — generate an invoice for inbound funds
-  conduit_transactions    — list recent transactions
+Tools and the API-key scope each one requires (scopes are enforced server-side):
+  conduit_create_wallet   — provision a new agent wallet with a daily limit   [admin]
+  conduit_attach_policy   — configure spending controls on a wallet           [admin]
+  conduit_balance         — check current balance                             [read]
+  conduit_pay             — send a payment (Lightning address or BOLT11)       [write]
+  conduit_receive         — generate an invoice for inbound funds             [write]
+  conduit_transactions    — list recent transactions                          [read]
+  conduit_fees            — report the operator's platform-fee revenue        [admin]
 
 Run:
   conduit-mcp           # stdio transport (Claude Desktop, etc.)
 
-Required env:
-  CONDUIT_API_KEY=ck_live_... or ck_test_...
-  CONDUIT_API_URL=https://api.conduit.energy   (optional)
+Required env (point these at YOUR self-hosted Conduit instance):
+  CONDUIT_API_KEY=ck_live_... or ck_test_...   (a key minted on your instance)
+  CONDUIT_API_URL=https://conduit.your-domain.com   (optional; the hosted demo
+                  defaults to https://api.conduit.energy if unset)
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ from conduit import (
     Agent,
     ConduitError,
     PolicyViolation,
+    default_client,
 )
 
 server: Server = Server("conduit")
@@ -60,7 +66,8 @@ async def list_tools() -> list[types.Tool]:
             description=(
                 "Create a new Bitcoin Lightning wallet for this AI agent. "
                 "The daily_limit (sats) is enforced by the Conduit policy engine — "
-                "the agent CANNOT spend more than this in 24h."
+                "the agent CANNOT spend more than this in 24h. "
+                "Requires an ADMIN-scope API key (creating agents is an admin action)."
             ),
             inputSchema={
                 "type": "object",
@@ -79,7 +86,8 @@ async def list_tools() -> list[types.Tool]:
             name="conduit_attach_policy",
             description=(
                 "Attach or replace the spending policy on an agent wallet. "
-                "Any payment violating the policy is rejected before reaching Lightning."
+                "Any payment violating the policy is rejected before reaching Lightning. "
+                "Requires an ADMIN-scope API key (setting policies is an admin action)."
             ),
             inputSchema={
                 "type": "object",
@@ -97,7 +105,10 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="conduit_balance",
-            description="Check the current balance of an agent wallet.",
+            description=(
+                "Check the current balance of an agent wallet. "
+                "Requires a READ-scope (or higher) API key."
+            ),
             inputSchema={
                 "type": "object",
                 "required": ["agent"],
@@ -108,7 +119,8 @@ async def list_tools() -> list[types.Tool]:
             name="conduit_pay",
             description=(
                 "Send a Bitcoin Lightning payment from an agent wallet to a "
-                "Lightning address (name@host) or a BOLT11 invoice."
+                "Lightning address (name@host) or a BOLT11 invoice. "
+                "Requires a WRITE-scope (or higher) API key."
             ),
             inputSchema={
                 "type": "object",
@@ -123,7 +135,10 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="conduit_receive",
-            description="Generate a Lightning invoice for an agent wallet to receive funds.",
+            description=(
+                "Generate a Lightning invoice for an agent wallet to receive funds. "
+                "Requires a WRITE-scope (or higher) API key."
+            ),
             inputSchema={
                 "type": "object",
                 "required": ["agent", "amount"],
@@ -137,7 +152,10 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="conduit_transactions",
-            description="List recent transactions for an agent wallet.",
+            description=(
+                "List recent transactions for an agent wallet. "
+                "Requires a READ-scope (or higher) API key."
+            ),
             inputSchema={
                 "type": "object",
                 "required": ["agent"],
@@ -146,6 +164,17 @@ async def list_tools() -> list[types.Tool]:
                     "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 25},
                 },
             },
+        ),
+        types.Tool(
+            name="conduit_fees",
+            description=(
+                "Report the platform-fee revenue collected by this self-hosted "
+                "Conduit operator — the per-payment fee (in sats) charged on top of "
+                "each payment and kept on settle. Returns total_collected_sats, "
+                "total_collected_btc, today_sats, and fees_by_day (most-recent-first). "
+                "Requires an ADMIN-scope API key."
+            ),
+            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
@@ -241,6 +270,18 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
                     }
                     for t in txns
                 ],
+            })
+
+        if name == "conduit_fees":
+            # No high-level SDK helper for fees; call the admin-scoped
+            # GET /v1/fees endpoint directly via the low-level client, which
+            # reuses the same CONDUIT_API_KEY / CONDUIT_API_URL configuration.
+            data = default_client().get("/v1/fees")
+            return _ok({
+                "total_collected_sats": data["total_collected_sats"],
+                "total_collected_btc": data["total_collected_btc"],
+                "today_sats": data["today_sats"],
+                "fees_by_day": data["fees_by_day"],
             })
 
         raise ConduitError(f"Unknown tool: {name}", code="UNKNOWN_TOOL")

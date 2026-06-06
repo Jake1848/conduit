@@ -29,6 +29,7 @@ export interface Receipt {
   hash: string | null;
   amountSats: number;
   feeSats: number;
+  platformFeeSats: number;
   settledInMs: number | null;
   destination: string | null;
   memo: string | null;
@@ -53,6 +54,7 @@ export interface Transaction {
   direction: "send" | "receive";
   amountSats: number;
   feeSats: number;
+  platformFeeSats: number;
   destination: string | null;
   paymentHash: string | null;
   status: "pending" | "settled" | "failed";
@@ -70,6 +72,7 @@ function fromReceipt(r: ReceiptJSON): Receipt {
     hash: r.hash,
     amountSats: r.amount_sats,
     feeSats: r.fee_sats,
+    platformFeeSats: r.platform_fee_sats ?? 0,
     settledInMs: r.settled_in_ms,
     destination: r.destination,
     memo: r.memo,
@@ -96,6 +99,7 @@ function fromTx(t: TransactionJSON): Transaction {
     direction: t.direction,
     amountSats: t.amount_sats,
     feeSats: t.fee_sats,
+    platformFeeSats: t.platform_fee_sats ?? 0,
     destination: t.destination,
     paymentHash: t.payment_hash,
     status: t.status,

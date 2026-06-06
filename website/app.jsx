@@ -43,6 +43,7 @@ function App() {
         <SDK />
         <ConsoleSection />
         <Cases />
+        <Pricing />
         <Security />
         <Vision />
         <Final />

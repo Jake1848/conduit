@@ -1,0 +1,37 @@
+# Local development stack — mock LND, SQLite, hot-reloadable core build.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# This runs Conduit with LND_MOCK=true so you can build against the API without
+# a real Lightning node. No real money moves. For a real self-hosted deployment
+# pointed at YOUR OWN LND node, use docker-compose.yml instead.
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ./core
+    image: conduit/core:dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      CONDUIT_ENV: ${CONDUIT_ENV:-development}
+      CONDUIT_NETWORK: ${CONDUIT_NETWORK:-testnet}
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/conduit.db}
+      API_SECRET_KEY: ${API_SECRET_KEY:-dev-secret-change-me}
+      LND_MOCK: ${LND_MOCK:-true}
+      LND_REST_URL: ${LND_REST_URL:-https://127.0.0.1:8080}
+      LND_MACAROON_PATH: ${LND_MACAROON_PATH:-/lnd/admin.macaroon}
+      LND_TLS_CERT_PATH: ${LND_TLS_CERT_PATH:-/lnd/tls.cert}
+      BOOTSTRAP_API_KEY: ${BOOTSTRAP_API_KEY:-ck_test_dev_root}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./core/data:/app/data
+      # In production, mount the real LND data directory read-only:
+      # - /home/conduit/.lnd:/lnd:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -2,6 +2,26 @@
 
 What Conduit defends against, and what it doesn't.
 
+## Non-custodial by construction
+
+Conduit is software **you** run, not a service that holds your money. The trust
+model is self-hosted:
+
+- **You control the node.** Conduit talks to LND only through the macaroon you
+  mount into it. The seed and the channels are yours; Conduit never holds funds
+  and cannot move them without the node you own.
+- **You control the keys.** The bootstrap API key is **your** master key to
+  **your own** Conduit instance — it mints the scoped keys you hand to agents.
+  Guard it like the LND macaroon.
+- **You control the ledger.** Agent balances are virtual sub-balances of your
+  node. You credit and debit them; the underlying sats stay in your channels.
+- **No third party in the path.** There is no Conduit-operated wallet, no hosted
+  custody, no middleman that can freeze, seize, or rehypothecate your sats. Turn
+  Conduit off and the money is still in your channels.
+
+Conduit's job is to be the **policy + accounting layer** in front of a node you
+own. The rest of this page is about what that layer does and does not protect.
+
 ## In scope
 
 - **An LLM agent goes off the rails** and tries to drain its wallet. The

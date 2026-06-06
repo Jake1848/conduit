@@ -32,6 +32,22 @@ export interface Metrics {
   p99_settlement_ms: number | null;
   hourly: HourBucket[];
   top_agents: TopAgent[];
+  // Platform-fee revenue (the operator's per-transaction earnings, in sats).
+  fee_revenue_total_sats: number;
+  fee_revenue_today_sats: number;
+}
+
+// ---- /v1/fees (platform-fee revenue; requires an admin-scope key) ----
+export interface FeeDay {
+  date: string; // "YYYY-MM-DD"
+  sats: number;
+  tx_count: number;
+}
+export interface Fees {
+  total_collected_sats: number;
+  total_collected_btc: number;
+  today_sats: number;
+  fees_by_day: FeeDay[]; // most-recent-first
 }
 
 export interface Balance {
@@ -49,7 +65,8 @@ export interface Transaction {
   agent_id: string;
   direction: TxDirection;
   amount_sats: number;
-  fee_sats: number;
+  fee_sats: number; // LND routing fee
+  platform_fee_sats: number; // Conduit platform fee — the operator's revenue
   destination: string | null;
   payment_hash: string | null;
   status: TxStatus;

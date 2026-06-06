@@ -298,7 +298,8 @@ async def test_end_to_end_lnd_error_then_reconcile(client, monkeypatch):
     bal_after_err = (
         await client.get(f"/v1/agents/{agent_id}/balance")
     ).json()["available_sats"]
-    assert bal_after_err == 10_000 - 202  # 200 + 1% fee budget rounds up to 2
+    # 200 payment + 2 routing budget (1%) + 1 platform fee (0.5%, round(1.0)=1).
+    assert bal_after_err == 10_000 - 203
 
     # The pending row has a payment_hash now (post-fix).
     async with SessionLocal() as session:
@@ -327,6 +328,6 @@ async def test_end_to_end_lnd_error_then_reconcile(client, monkeypatch):
     r = await client.get(f"/v1/transactions/{tx_id_value}")
     assert r.json()["status"] == "settled"
 
-    # Fee refund of 1 sat (budget 2 - actual 1).
+    # Routing-fee refund of 1 sat (budget 2 - actual 1); platform fee (1) is KEPT.
     bal_final = (await client.get(f"/v1/agents/{agent_id}/balance")).json()["available_sats"]
-    assert bal_final == 10_000 - 201  # 200 sats + 1 sat actual fee
+    assert bal_final == 10_000 - 202  # 200 payment + 1 actual routing + 1 platform fee

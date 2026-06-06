@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -197,3 +198,32 @@ jobs:
 
       - name: Tests (node --test)
         run: npm test
+
+  docker:
+    name: docker (ghcr push)
+    runs-on: ubuntu-latest
+    # Only publish images for release tags (v*). Pushes/PRs to main skip this.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    # Required to push the image to the GitHub Container Registry (ghcr.io).
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./core
+          push: true
+          tags: |
+            ghcr.io/jake1848/conduit:${{ github.ref_name }}
+            ghcr.io/jake1848/conduit:latest

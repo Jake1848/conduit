@@ -14,6 +14,7 @@ from .errors import ConduitError
 from .middleware import RateLimitMiddleware, RequestContextMiddleware
 from .routes import (
     agents,
+    fees,
     invoices,
     keys,
     metrics,
@@ -197,3 +198,4 @@ app.include_router(invoices.router)
 app.include_router(transactions.router)
 app.include_router(webhooks.router)
 app.include_router(metrics.router)
+app.include_router(fees.router)

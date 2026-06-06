@@ -1,6 +1,14 @@
 # Conduit infrastructure
 
-Files in this directory are run on the Hetzner VPS, not from a local clone.
+Conduit is **self-hosted and non-custodial**: you, the operator, run it on your
+own box, in front of your own LND node, holding your own keys and channel funds.
+Conduit never takes custody of anyone's money — it sits beside your node and
+calls it on your behalf. The seed, the wallet password, and the bootstrap/admin
+key documented here are *your* master credentials to *your own* system; protect
+them accordingly.
+
+Files in this directory are run on the host where you operate Conduit (the
+reference deployment is a Hetzner VPS), not from a local clone.
 
 ## Runbook (first-time setup)
 
@@ -60,11 +68,11 @@ it prompts for the wallet password, writes it to
 and adds `wallet-unlock-password-file=...` to `lnd.conf`. Restart LND
 (`sudo systemctl restart lnd`) to apply.
 
-**Security tradeoff.** Auto-unlock trades convenience for risk: the wallet
-password now lives on disk, so **anyone who gets root on this VPS can unlock
-the wallet**. Use it only if you trust the box's disk encryption and access
-controls. For high-value nodes, prefer a hardware-backed unlock or keep
-running `lncli unlock` manually after each (rare) reboot.
+**Security tradeoff.** Auto-unlock trades convenience for risk: your wallet
+password now lives on disk, so **anyone who gets root on your box can unlock
+your wallet** and reach your funds. Use it only if you trust the box's disk
+encryption and access controls. For high-value nodes, prefer a hardware-backed
+unlock or keep running `lncli unlock` manually after each (rare) reboot.
 
 ## Postgres backups
 
@@ -98,6 +106,23 @@ throwaway database to confirm the backups are actually usable.
 > (e.g. healthchecks.io) that the backup pings, alerting if no off-box copy lands
 > within ~12h.
 
+## Platform fee configuration (your revenue)
+
+Conduit charges a small **per-transaction platform fee**, in sats, on top of
+each payment. This is *your* revenue as the operator — it settles to *your* own
+node, since you hold the keys and the funds. Configure it on the Core API stack
+(e.g. in `.env.prod`, which the prod compose file reads):
+
+| Env                     | Default | Meaning |
+| ----------------------- | ------- | ------- |
+| `PLATFORM_FEE_PERCENT`  | `0.5`   | your fee, as a percent of the payment amount (`0.5` = 0.5%); set `0` to disable |
+| `PLATFORM_FEE_MIN_SATS` | `1`     | floor for the per-transaction fee |
+| `PLATFORM_FEE_MAX_SATS` | `1000`  | ceiling for the per-transaction fee |
+
+The fee is charged on top of the payment amount (separate from the LND routing
+fee) and is collected on settle. Set `PLATFORM_FEE_PERCENT=0` to run Conduit
+with no platform fee. Track what you've earned via `GET /v1/metrics`.
+
 ## Security checklist
 
 - [ ] LND seed phrase stored **only** on paper, off the VPS
@@ -109,6 +134,8 @@ throwaway database to confirm the backups are actually usable.
 - [ ] `fail2ban` installed
 - [ ] `unattended-upgrades` enabled
 - [ ] `admin.macaroon` file permissions = 600, owned by `conduit`
+- [ ] Bootstrap/admin key (your master key to this deployment) stored in a secret
+      manager, never committed, and rotated if it ever leaks
 - [ ] Channel backup file (`channel.backup`) replicated to a separate host
 - [ ] Postgres backups scheduled (`backup_postgres.sh`) and restore-tested; off-box copy if value justifies it
 - [ ] `vercel env` (or wherever the API key lives) restricted to the deployment env

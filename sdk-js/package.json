@@ -1,7 +1,8 @@
 {
-  "name": "@conduit/sdk",
-  "version": "0.1.0",
-  "description": "Bitcoin Lightning payments for autonomous AI agents — Conduit SDK",
+  "name": "@conduit-btc/sdk",
+  "version": "0.7.0",
+  "description": "Self-hosted, non-custodial Bitcoin Lightning payments for autonomous AI agents — your node, your keys, your rules.",
+  "author": "Jake Knowles",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,13 +22,19 @@
   "engines": {
     "node": ">=20"
   },
-  "homepage": "https://conduit.energy",
+  "homepage": "https://github.com/Jake1848/conduit#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Jake1848/conduit.git",
+    "url": "git+https://github.com/Jake1848/conduit.git",
     "directory": "sdk-js"
   },
-  "keywords": ["bitcoin", "lightning", "ai-agents", "payments", "lnd", "conduit"],
+  "bugs": {
+    "url": "https://github.com/Jake1848/conduit/issues"
+  },
+  "keywords": ["bitcoin", "lightning", "ai-agents", "payments", "lnd", "self-hosted", "non-custodial", "conduit"],
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.11.0"

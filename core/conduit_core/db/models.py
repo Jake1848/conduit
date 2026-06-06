@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -90,7 +91,12 @@ class Transaction(Base):
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
     direction: Mapped[str] = mapped_column(String(8), nullable=False)  # send|receive
     amount_sats: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    fee_sats: Mapped[int] = mapped_column(BigInteger, default=0)
+    fee_sats: Mapped[int] = mapped_column(BigInteger, default=0)  # LND routing-fee budget/actual
+    # Conduit operator's platform fee on this payment (revenue). Separate from
+    # fee_sats. Charged on settle, refunded with the rest on failure. See services/fees.py.
+    platform_fee_sats: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
     destination: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_hash: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     payment_preimage: Mapped[str | None] = mapped_column(String(120), nullable=True)

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.0 — Self-hosted platform fee (operator revenue)
+
+- **Self-hosted, non-custodial framing.** Conduit is software **you** run in
+  front of **your own** LND node — it never holds funds. The docs and README now
+  describe the self-hosted trust model throughout (your node, your keys, your
+  rules). No behavioral change; this clarifies how Conduit already works.
+- **Per-transaction platform fee** — a usage-based fee in sats, configured by the
+  operator via `PLATFORM_FEE_PERCENT` (default `0.5` = 0.5%),
+  `PLATFORM_FEE_MIN_SATS` (default `1`), and `PLATFORM_FEE_MAX_SATS` (default
+  `1000`). Charged on top of each payment, kept on settle, refunded in full on
+  failure. It is the operator's revenue, not a Conduit cut. Set the percent to
+  `0` to disable.
+- **`platform_fee_sats` on payment receipts** — `POST /v1/payments/send` and
+  `/pay` and `GET /v1/payments/{id}` now report the platform fee, separate from
+  `fee_sats` (the LND routing fee). See [Payments API](../api/payments.md).
+- **`GET /v1/fees`** (admin) — collected platform-fee revenue: `total_collected_sats`,
+  `total_collected_btc`, `today_sats`, and a `fees_by_day` series (up to 30 UTC
+  days, most-recent-first). See [Platform fees API](../api/fees.md).
+- **`GET /v1/metrics`** now also returns `fee_revenue_total_sats` and
+  `fee_revenue_today_sats` for dashboard stat cards.
+
 ## 0.6.0 — Dashboard support + audit fixes
 
 - **`GET /v1/metrics`** — server-aggregated fleet metrics in one call: treasury,

@@ -3,18 +3,19 @@
 import { useState } from "react";
 import { ArrowRight, KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { getStoredKey, API_BASE } from "@/lib/api";
+import { getStoredKey, getStoredApiUrl, DEFAULT_API_BASE } from "@/lib/api";
 
 export function LoginScreen() {
   const { connect, error } = useAuth();
   const [key, setKey] = useState(getStoredKey() || "");
+  const [apiUrl, setApiUrl] = useState(getStoredApiUrl() || DEFAULT_API_BASE);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      await connect(key);
+      await connect(key, apiUrl);
     } catch {
       /* error surfaced via context */
     } finally {
@@ -31,9 +32,23 @@ export function LoginScreen() {
         </div>
         <h1>Connect to the console</h1>
         <p className="sub">
-          Enter your Conduit API key to manage your agent fleet. The key is stored in your
-          browser and sent directly to the Conduit API.
+          Point this console at any Conduit instance — your own self-hosted node or the
+          hosted demo. Your API URL and key are stored in your browser and sent directly to
+          that Conduit API. Your node, your keys, your rules.
         </p>
+
+        <div className="field">
+          <label>API URL</label>
+          <input
+            type="text"
+            inputMode="url"
+            placeholder={DEFAULT_API_BASE}
+            value={apiUrl}
+            onChange={(e) => setApiUrl(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
 
         <div className="field">
           <label>API Key</label>
@@ -63,7 +78,7 @@ export function LoginScreen() {
         </button>
 
         <div className="login-hint">
-          API: {API_BASE}
+          Default API: {DEFAULT_API_BASE}
           <br />
           regtest sandbox key: ck_test_regtest_root_key
         </div>
