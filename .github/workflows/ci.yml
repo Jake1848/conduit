@@ -42,8 +42,10 @@ jobs:
         run: ruff check conduit_core alembic tests
 
       - name: Tests (pytest)
-        env:
-          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+        # No DATABASE_URL override: the test suite provisions its own temp-file
+        # SQLite (see tests/conftest.py). A file DB — unlike `:memory:` — gives
+        # each session a real connection sharing committed data, which the
+        # idempotency-reservation concurrency test depends on.
         run: pytest -x -q
 
       - name: Migrations match models (alembic check)
@@ -135,6 +137,37 @@ jobs:
 
       - name: Tests (pytest)
         run: pytest -x -q
+
+  security-audit:
+    name: security-audit (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only — surfaces known-vulnerable deps without blocking merges, so a
+    # transitive CVE doesn't wedge the pipeline. Triage via the job summary.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: pip-audit (core)
+        continue-on-error: true
+        working-directory: core
+        run: |
+          pip install pip-audit
+          pip install -e .
+          pip-audit --desc
+
+      - name: npm audit (sdk-js)
+        continue-on-error: true
+        working-directory: sdk-js
+        run: npm audit --audit-level=high || true
+
+      - name: npm audit (dashboard)
+        continue-on-error: true
+        working-directory: dashboard
+        run: npm audit --audit-level=high || true
 
   sdk-js:
     name: sdk-js (node ${{ matrix.node-version }})

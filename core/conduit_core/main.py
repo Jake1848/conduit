@@ -11,7 +11,7 @@ from .auth import ensure_bootstrap_key
 from .config import get_settings
 from .db import SessionLocal, init_db
 from .errors import ConduitError
-from .middleware import RateLimitMiddleware
+from .middleware import RateLimitMiddleware, RequestContextMiddleware
 from .routes import (
     agents,
     invoices,
@@ -26,6 +26,7 @@ from .routes import (
 from .services import webhook_sender
 from .services.invoice_watcher import InvoiceWatcher
 from .services.lnd import get_lnd, shutdown_lnd
+from .services.maintenance import IdempotencyPruner
 from .services.reconciler import PaymentReconciler
 
 
@@ -75,6 +76,16 @@ async def lifespan(app: FastAPI):
     async with SessionLocal() as s:
         await ensure_bootstrap_key(s)
 
+    # Retention prune for idempotency rows — runs in every mode (the table fills
+    # regardless of whether LND is mocked).
+    pruner = IdempotencyPruner(
+        SessionLocal,
+        retention_hours=settings.idempotency_retention_hours,
+        interval_seconds=settings.idempotency_prune_interval_seconds,
+    )
+    await pruner.start()
+    app.state.idempotency_pruner = pruner
+
     lnd = get_lnd()
     watcher: InvoiceWatcher | None = None
     reconciler: PaymentReconciler | None = None
@@ -115,6 +126,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await pruner.stop()
         if reconciler is not None:
             await reconciler.stop()
         if watcher is not None:
@@ -146,6 +158,10 @@ app.add_middleware(
 
 # In-process token-bucket rate limiter. See middleware.py for the worker caveat.
 app.add_middleware(RateLimitMiddleware, settings=_settings)
+
+# Outermost (added last): stamp a request id and bind it into the log context
+# before any other middleware runs, so even a rate-limit rejection is traceable.
+app.add_middleware(RequestContextMiddleware)
 
 
 @app.exception_handler(ConduitError)

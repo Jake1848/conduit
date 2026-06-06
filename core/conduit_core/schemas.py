@@ -190,6 +190,22 @@ class HealthOut(BaseModel):
     network: str
 
 
+class ComponentHealth(BaseModel):
+    ok: bool
+    detail: str | None = None
+
+
+class ReadyOut(BaseModel):
+    """Readiness probe payload. `ok` reflects whether the API can serve money-path
+    traffic — the database is a HARD dependency; LND degradation is surfaced but
+    not treated as fatal (it shouldn't restart-loop the API while the node resyncs)."""
+
+    ok: bool
+    version: str
+    network: str
+    components: dict[str, ComponentHealth]
+
+
 # ---------- API keys ----------
 
 class APIKeyCreateIn(BaseModel):

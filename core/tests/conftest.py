@@ -1,14 +1,29 @@
+import atexit
 import os
 import sys
+import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
-# In-memory DB is fine for the full suite but the FIRST test run in isolation
-# can hit aiosqlite/event-loop ordering issues; the full-suite run is canonical.
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+# Use a temp FILE (not `:memory:`) so each session gets its own real connection
+# sharing committed data — the multi-connection isolation the money path depends
+# on (e.g. the idempotency reservation writes via a separate session mid-request).
+# `:memory:` collapses to a single StaticPool connection and can't model that, so
+# a fresh session's write gets clobbered by the still-open route session's txn.
+_TEST_DB_PATH = os.path.join(tempfile.gettempdir(), f"conduit_test_{os.getpid()}.db")
+os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
+
+
+@atexit.register
+def _cleanup_test_db() -> None:
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(_TEST_DB_PATH + suffix)
+        except OSError:
+            pass
 os.environ.setdefault("LND_MOCK", "true")
 os.environ.setdefault("CONDUIT_ENV", "development")
 os.environ.setdefault("CONDUIT_NETWORK", "testnet")

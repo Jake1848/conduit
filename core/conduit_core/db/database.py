@@ -2,6 +2,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
@@ -14,24 +15,51 @@ class Base(DeclarativeBase):
 
 
 _settings = get_settings()
+_is_sqlite = _settings.database_url.startswith("sqlite")
 # connect_args carries dialect-specific bits — used to keep SQLite usable
 # from multiple asyncio tasks via the aiosqlite shim.
 _connect_args: dict = {}
-if _settings.database_url.startswith("sqlite"):
-    _connect_args["check_same_thread"] = False
-
 _engine_kwargs: dict = {"future": True, "echo": False, "connect_args": _connect_args}
-# TEST-ONLY: under pytest, pytest-asyncio runs each test on a fresh event loop,
-# but a pooled asyncpg connection is bound to the loop that created it — reusing
-# it on the next test's loop raises `RuntimeError: got Future attached to a
-# different loop` (which is why the Postgres CI job was red). NullPool opens a
-# fresh connection per operation, so nothing is cached across loops. Production
-# keeps normal pooling; this branch never triggers outside the test runner.
-if "pytest" in sys.modules and _settings.database_url.startswith("postgresql"):
+
+if _is_sqlite:
+    _connect_args["check_same_thread"] = False
+    # Wait (rather than immediately erroring with "database is locked") when a
+    # concurrent writer holds the file — paired with WAL below this lets the
+    # multi-session money path behave like a real RDBMS on dev/test SQLite.
+    _connect_args["timeout"] = 30
+elif "pytest" in sys.modules and _settings.database_url.startswith("postgresql"):
+    # TEST-ONLY: under pytest, pytest-asyncio runs each test on a fresh event loop,
+    # but a pooled asyncpg connection is bound to the loop that created it — reusing
+    # it on the next test's loop raises `RuntimeError: got Future attached to a
+    # different loop` (which is why the Postgres CI job was red). NullPool opens a
+    # fresh connection per operation, so nothing is cached across loops. Production
+    # keeps normal pooling; this branch never triggers outside the test runner.
     _engine_kwargs["poolclass"] = NullPool
+else:
+    # Postgres in production: validate each pooled connection before use so a
+    # recycled/stale socket (LB idle-timeout, failover) is transparently replaced
+    # instead of surfacing as a query error on the money path. Recycle well under
+    # typical infra idle timeouts.
+    _engine_kwargs["pool_pre_ping"] = True
+    _engine_kwargs["pool_size"] = _settings.db_pool_size
+    _engine_kwargs["max_overflow"] = _settings.db_max_overflow
+    _engine_kwargs["pool_recycle"] = 1800
 
 engine = create_async_engine(_settings.database_url, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+if _is_sqlite:
+    # WAL gives concurrent readers + a single writer with committed-data visibility
+    # across connections — the isolation behaviour the idempotency reservation and
+    # the payment ledger rely on. `:memory:` can't do this (it collapses to one
+    # connection), which is why dev/test use a file URL.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - infra wiring
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.close()
 
 
 async def init_db() -> None:

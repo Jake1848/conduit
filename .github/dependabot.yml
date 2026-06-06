@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # Python core API
+  - package-ecosystem: pip
+    directory: /core
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python-deps:
+        patterns: ["*"]
+
+  # Python SDK
+  - package-ecosystem: pip
+    directory: /sdk-python
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # JS SDK
+  - package-ecosystem: npm
+    directory: /sdk-js
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Dashboard
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # GitHub Actions themselves
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -17,6 +17,7 @@ from ..db.models import Agent, APIKey, Policy, Transaction
 from ..errors import (
     AgentNotFound,
     ConduitError,
+    IdempotencyConflict,
     InsufficientBalance,
     InvalidInput,
     PaymentFailed,
@@ -62,34 +63,49 @@ async def _idempotent(
     key = idempotency.validate_key(idem_key)
     request_hash = idempotency.hash_payload(body)
 
-    cached = await idempotency.lookup(session, api_key_id, key, request_hash)
-    if cached is not None:
-        return JSONResponse(content=cached.body, status_code=cached.status_code)
+    # Reserve the key BEFORE executing. The (api_key_id, key) unique constraint is
+    # shared across all workers, so a concurrent duplicate loses the insert race and
+    # is told the request is in progress (409) instead of firing a second payment.
+    outcome = await idempotency.reserve(api_key_id, key, request_hash)
+    if outcome.cached is not None:
+        return JSONResponse(content=outcome.cached.body, status_code=outcome.cached.status_code)
+    if outcome.in_progress:
+        raise IdempotencyConflict(
+            "A request with this Idempotency-Key is already in progress. Wait for it "
+            "to complete, then retry to receive the same result.",
+            in_progress=True,
+        )
 
+    # We won the reservation — execute, then write the outcome onto the reserved row.
     try:
         receipt = await run()
     except ConduitError as e:
         # Cache failure responses too — Stripe-style. Otherwise a flapping
         # network would let retries hit the live execution path repeatedly.
-        await idempotency.store(
-            session,
+        await idempotency.finalize(
+            api_key_id, key, request_hash, status_code=e.status_code, body={"detail": e.detail}
+        )
+        raise
+    except Exception:
+        # Unexpected error — resolve the reservation (never leave it stuck pending)
+        # and don't let a retry re-execute a payment that may have partially happened.
+        await idempotency.finalize(
             api_key_id,
             key,
             request_hash,
-            status_code=e.status_code,
-            body={"detail": e.detail},
+            status_code=500,
+            body={
+                "detail": {
+                    "error": "internal_error",
+                    "code": "INTERNAL_ERROR",
+                    "detail": "An unexpected error occurred. The incident has been logged.",
+                }
+            },
         )
         raise
 
     payload = receipt.model_dump(mode="json") if isinstance(receipt, BaseModel) else receipt
-    await idempotency.store(
-        session,
-        api_key_id,
-        key,
-        request_hash,
-        status_code=201,
-        body=payload,
-    )
+    await idempotency.finalize(api_key_id, key, request_hash, status_code=201, body=payload)
     return receipt
 
 

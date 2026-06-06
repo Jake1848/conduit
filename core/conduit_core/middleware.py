@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from dataclasses import dataclass
 
 import structlog
@@ -28,7 +29,42 @@ from .config import Settings
 
 log = structlog.get_logger(__name__)
 
-_HEALTH_PATHS = {"/v1/health"}
+_HEALTH_PATHS = {"/v1/health", "/v1/health/ready"}
+
+# A client-supplied request id is echoed back (for trace stitching) but must be
+# bounded and sanitised so it can't be used to inject newlines into our JSON logs.
+_MAX_REQUEST_ID_LEN = 200
+
+
+def _clean_request_id(raw: str) -> str | None:
+    raw = raw.strip()
+    if not raw or len(raw) > _MAX_REQUEST_ID_LEN:
+        return None
+    if any(c.isspace() for c in raw):
+        return None
+    return raw
+
+
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Assigns every request a stable id, binds it (plus method/path) into the
+    structlog contextvars so all logs for the request are correlated, and echoes
+    it back as `X-Request-ID` so a client/operator can grep a single call across
+    the API, nginx, and the box journal."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        rid = _clean_request_id(request.headers.get("x-request-id", "")) or (
+            "req_" + uuid.uuid4().hex
+        )
+        request.state.request_id = rid
+        structlog.contextvars.bind_contextvars(
+            request_id=rid, method=request.method, path=request.url.path
+        )
+        try:
+            response = await call_next(request)
+        finally:
+            structlog.contextvars.clear_contextvars()
+        response.headers["X-Request-ID"] = rid
+        return response
 
 
 @dataclass
@@ -115,10 +151,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 # Use a prefix of the raw key — we don't want the full secret in
                 # any in-memory dump but we need enough to distinguish keys.
                 return "key:" + token[:16]
-        # Prefer the X-Forwarded-For first IP if present (we sit behind nginx).
+        # X-Forwarded-For is `client, proxy1, proxy2, ...`. The LEFT-most entry is
+        # attacker-controlled (any client can send `X-Forwarded-For: 1.2.3.4` to
+        # masquerade and dodge their own rate-limit bucket). Trust the RIGHT-most
+        # entry instead — the IP our own nginx appended, i.e. the real peer it saw.
+        # (Valid for the single-trusted-proxy topology we run; add a hop count if
+        # more proxies are ever chained in front.)
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
-            return "ip:" + xff.split(",")[0].strip()
+            parts = [p.strip() for p in xff.split(",") if p.strip()]
+            if parts:
+                return "ip:" + parts[-1]
         client = request.client
         return "ip:" + (client.host if client else "unknown")
 

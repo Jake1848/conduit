@@ -126,9 +126,12 @@ class IdempotencyRecord(Base):
 
     SECURITY: the same key reused with a different request body is rejected
     with 409 — we never silently return a cached response for a different
-    request. Records have no TTL in v1; storage is cheap and stale records
-    keep retry traffic safely idempotent. A future cleanup job can prune by
-    created_at.
+    request.
+
+    RETENTION: rows are pruned by created_at once past the retention window
+    (IdempotencyPruner). A `pending` reservation (response_status == 0) is written
+    BEFORE the payment runs and updated to the real response after; the unique
+    index doubles as the concurrency lock that blocks a second in-flight request.
     """
 
     __tablename__ = "idempotency_responses"
@@ -149,6 +152,8 @@ class IdempotencyRecord(Base):
         # Unique per (api_key_id, key) — a key is scoped to the API key that
         # issued it, so two different agents can use the same human-chosen value.
         Index("ix_idem_key_unique", "api_key_id", "key", unique=True),
+        # Supports the retention prune (DELETE ... WHERE created_at < cutoff).
+        Index("ix_idem_created_at", "created_at"),
     )
 
 
