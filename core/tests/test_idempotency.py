@@ -163,3 +163,32 @@ async def test_idempotency_is_scoped_to_api_key(client):
     assert r2.status_code == 201
     assert r2.json()["amount_sats"] == 75
     assert r2.json()["id"] != r1.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_key_executes_once(client):
+    """Two TRULY CONCURRENT requests with the same Idempotency-Key must result
+    in exactly ONE payment — the reservation blocks the second at the DB layer
+    (it gets an in-progress 409 or the cached response), never a double-spend."""
+    import asyncio
+
+    r = await client.post("/v1/agents", json={"name": "idem-concurrent"})
+    agent_id = r.json()["id"]
+    await _credit(client, agent_id, 100_000)
+
+    payload = {"agent_id": agent_id, "dest_pubkey": "02" + "ff" * 32, "sats": 250}
+    headers = {"Idempotency-Key": "concurrent-key-xyz"}
+
+    r1, r2 = await asyncio.gather(
+        client.post("/v1/payments/send", json=payload, headers=headers),
+        client.post("/v1/payments/send", json=payload, headers=headers),
+    )
+    codes = sorted([r1.status_code, r2.status_code])
+    # One winner (201); the loser is the in-progress 409 or the cached 201.
+    assert 201 in codes, (r1.text, r2.text)
+    assert codes[0] in (201, 409), codes
+
+    # THE invariant: exactly one settled send exists — no double payment.
+    txns = (await client.get(f"/v1/agents/{agent_id}/transactions?direction=send")).json()["data"]
+    settled = [t for t in txns if t["status"] == "settled"]
+    assert len(settled) == 1, f"double-spend: {len(settled)} settled sends from concurrent same-key"

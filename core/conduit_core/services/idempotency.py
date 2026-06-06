@@ -12,11 +12,13 @@ Conflict handling: if the same key is reused with a DIFFERENT request
 body, we refuse with 409. We never return a cached response for a request
 that doesn't match what was originally cached — that would be a worse bug.
 
-Concurrency: v1 does not protect against two truly concurrent requests
-with the same key (both miss the cache, both execute, second store
-collides). The unique constraint will reject the duplicate write but the
-duplicate payment will have happened. Sequential retries (the common
-case — network blip, SDK backs off, retries) are fully covered.
+Concurrency (v2 — reservation): we RESERVE the key by inserting a `pending`
+record (response_status == 0 sentinel) BEFORE executing. The (api_key_id, key)
+unique constraint is enforced by Postgres across ALL workers/processes, so a
+second truly-concurrent request loses the insert race and is told the key is
+already in flight (409) instead of executing a second payment. The winner runs
+the payment and then UPDATEs the reservation with the real response. Sequential
+retries (network blip → SDK backs off → retries) still get the cached response.
 """
 
 from __future__ import annotations
@@ -29,19 +31,28 @@ from typing import Any
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import IdempotencyRecord
 from ..errors import IdempotencyConflict
 from .ids import idempotency_id
 
 MAX_KEY_LENGTH = 200
+_PENDING = 0  # response_status sentinel for an in-flight reservation (never a real HTTP status)
 
 
 @dataclass(frozen=True)
 class CachedResponse:
     status_code: int
     body: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReserveOutcome:
+    """Result of trying to reserve an idempotency key."""
+
+    reserved: bool = False  # we won — caller should execute then finalize()
+    in_progress: bool = False  # a concurrent request holds the key, still running
+    cached: CachedResponse | None = None  # a completed record exists — return it
 
 
 def hash_payload(body: BaseModel | dict[str, Any]) -> str:
@@ -65,38 +76,73 @@ def validate_key(key: str) -> str:
     return key
 
 
-async def lookup(
-    session: AsyncSession, api_key_id_value: str, key: str, request_hash: str
-) -> CachedResponse | None:
-    """Return cached response if (api_key_id, key) exists.
-
-    Raises IdempotencyConflict if a cached record exists but its
-    request_hash differs — never return a cached response for a different
-    request.
-    """
-    row = await session.execute(
-        select(IdempotencyRecord).where(
-            IdempotencyRecord.api_key_id == api_key_id_value,
-            IdempotencyRecord.key == key,
-        )
-    )
-    rec = row.scalar_one_or_none()
-    if rec is None:
-        return None
-    if rec.request_hash != request_hash:
-        raise IdempotencyConflict(
-            f"Idempotency-Key {key!r} was previously used with a different "
-            "request body. Use a fresh key for this request."
-        )
+def _decode(rec: IdempotencyRecord) -> CachedResponse | None:
     try:
         body = json.loads(rec.response_body)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return None
     return CachedResponse(status_code=rec.response_status, body=body)
 
 
-async def store(
-    session: AsyncSession,
+async def reserve(
+    api_key_id_value: str, key: str, request_hash: str
+) -> ReserveOutcome:
+    """Atomically claim (api_key_id, key) before executing the payment.
+
+    Uses its OWN short-lived session (durable, independent of the route session
+    which a failed payment may roll back). Returns:
+      - reserved=True  → we won the race; execute then call finalize().
+      - in_progress=True → a concurrent request holds the key and hasn't finished.
+      - cached=<resp>  → a completed record exists; return it.
+    Raises IdempotencyConflict (409) if the key was used with a different body.
+    """
+    from ..db import SessionLocal  # local import to avoid circulars
+
+    async with SessionLocal() as fresh:
+        fresh.add(
+            IdempotencyRecord(
+                id=idempotency_id(),
+                api_key_id=api_key_id_value,
+                key=key,
+                request_hash=request_hash,
+                response_status=_PENDING,
+                response_body="",
+            )
+        )
+        try:
+            await fresh.commit()
+            return ReserveOutcome(reserved=True)
+        except IntegrityError:
+            await fresh.rollback()
+
+    # Someone already holds (api_key_id, key) — inspect it.
+    async with SessionLocal() as fresh:
+        rec = (
+            await fresh.execute(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.api_key_id == api_key_id_value,
+                    IdempotencyRecord.key == key,
+                )
+            )
+        ).scalar_one_or_none()
+        if rec is None:
+            # Vanished between our failed insert and this read (e.g. pruned).
+            # Treat as in-progress so we never double-execute.
+            return ReserveOutcome(in_progress=True)
+        if rec.request_hash != request_hash:
+            raise IdempotencyConflict(
+                f"Idempotency-Key {key!r} was previously used with a different "
+                "request body. Use a fresh key for this request."
+            )
+        if rec.response_status == _PENDING:
+            return ReserveOutcome(in_progress=True)
+        cached = _decode(rec)
+        if cached is None:
+            return ReserveOutcome(in_progress=True)
+        return ReserveOutcome(cached=cached)
+
+
+async def finalize(
     api_key_id_value: str,
     key: str,
     request_hash: str,
@@ -104,34 +150,35 @@ async def store(
     status_code: int,
     body: dict[str, Any],
 ) -> None:
-    """Persist a response under (api_key_id, key).
+    """Write the real response onto the reserved row (UPDATE), so retries get
+    the cached outcome. Best-effort: if the reservation vanished, insert fresh."""
+    from ..db import SessionLocal
 
-    Uses its OWN session — we may be called from a route whose request
-    session was rolled back by a failed payment. Sharing that session
-    risks SQLAlchemy state errors. A fresh session also means the store
-    is durable independent of whatever the route does next.
-
-    On unique-constraint collision (concurrent insert) we swallow — the
-    other side already wrote and the next lookup will hit that record.
-    """
-    from ..db import SessionLocal  # local import to avoid circulars
-
-    rec_id = idempotency_id()
     body_json = json.dumps(body, default=str, separators=(",", ":"))
-
     async with SessionLocal() as fresh:
-        fresh.add(
-            IdempotencyRecord(
-                id=rec_id,
-                api_key_id=api_key_id_value,
-                key=key,
-                request_hash=request_hash,
-                response_status=status_code,
-                response_body=body_json,
+        rec = (
+            await fresh.execute(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.api_key_id == api_key_id_value,
+                    IdempotencyRecord.key == key,
+                )
             )
-        )
+        ).scalar_one_or_none()
+        if rec is None:
+            fresh.add(
+                IdempotencyRecord(
+                    id=idempotency_id(),
+                    api_key_id=api_key_id_value,
+                    key=key,
+                    request_hash=request_hash,
+                    response_status=status_code,
+                    response_body=body_json,
+                )
+            )
+        else:
+            rec.response_status = status_code
+            rec.response_body = body_json
         try:
             await fresh.commit()
         except IntegrityError:
             await fresh.rollback()
-            return

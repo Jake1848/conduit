@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy import text
 
 from .. import __version__
 from ..auth import require_scope
 from ..config import get_settings
-from ..schemas import HealthOut, StatusOut
+from ..db import SessionLocal
+from ..schemas import ComponentHealth, HealthOut, ReadyOut, StatusOut
 from ..services.lnd import get_lnd
 
 router = APIRouter(prefix="/v1", tags=["system"])
@@ -11,8 +13,46 @@ router = APIRouter(prefix="/v1", tags=["system"])
 
 @router.get("/health", response_model=HealthOut)
 async def health() -> HealthOut:
+    """Liveness: the process is up and serving. Intentionally does no I/O so a
+    transient DB/LND blip never restart-loops the container."""
     s = get_settings()
     return HealthOut(ok=True, version=__version__, network=s.network)
+
+
+@router.get("/health/ready", response_model=ReadyOut)
+async def ready(response: Response) -> ReadyOut:
+    """Readiness: checks the dependencies the money path actually needs. The DB is
+    a hard dependency (→ 503 if down); LND is reported but not fatal."""
+    s = get_settings()
+    components: dict[str, ComponentHealth] = {}
+
+    db_ok = True
+    db_detail: str | None = None
+    try:
+        async with SessionLocal() as sess:
+            await sess.execute(text("SELECT 1"))
+    except Exception as e:  # noqa: BLE001 - report, never raise from a probe
+        db_ok = False
+        db_detail = type(e).__name__
+    components["database"] = ComponentHealth(ok=db_ok, detail=db_detail)
+
+    lnd_ok = True
+    lnd_detail: str | None = None
+    try:
+        info = await get_lnd().get_info()
+        if not info.synced_to_chain:
+            lnd_detail = "not_synced_to_chain"
+    except Exception as e:  # noqa: BLE001
+        lnd_ok = False
+        lnd_detail = type(e).__name__
+    components["lnd"] = ComponentHealth(ok=lnd_ok, detail=lnd_detail)
+
+    overall = db_ok  # DB down = genuinely not ready; LND degradation is surfaced only.
+    if not overall:
+        response.status_code = 503
+    return ReadyOut(
+        ok=overall, version=__version__, network=s.network, components=components
+    )
 
 
 @router.get("/status", response_model=StatusOut)
