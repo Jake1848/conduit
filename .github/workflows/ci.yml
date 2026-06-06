@@ -205,8 +205,10 @@ jobs:
     # Only publish images for release tags (v*). Pushes/PRs to main skip this.
     if: startsWith(github.ref, 'refs/tags/v')
 
-    # Required to push the image to the GitHub Container Registry (ghcr.io).
+    # Specifying a permissions block resets ALL scopes to none, so we must
+    # re-grant contents:read (actions/checkout needs it) alongside packages:write.
     permissions:
+      contents: read
       packages: write
 
     steps:
