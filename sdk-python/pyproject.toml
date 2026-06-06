@@ -30,7 +30,7 @@ Repository = "https://github.com/Jake1848/conduit"
 Issues = "https://github.com/Jake1848/conduit/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.15.16"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
