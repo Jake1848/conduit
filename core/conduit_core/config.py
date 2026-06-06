@@ -17,10 +17,13 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field("sqlite+aiosqlite:///./data/conduit.db", alias="DATABASE_URL")
-    # Postgres connection pool (ignored for SQLite). Sized for a single API worker;
-    # multiply by the worker count when capacity-planning against Postgres max_connections.
-    db_pool_size: int = Field(10, alias="DB_POOL_SIZE")
-    db_max_overflow: int = Field(20, alias="DB_MAX_OVERFLOW")
+    # Postgres connection pool (ignored for SQLite). Conservative by default —
+    # pool_size + max_overflow = max connections PER WORKER, so this stays within
+    # Postgres max_connections (100) even at several workers. The real reliability
+    # win is pool_pre_ping + recycle (see db/database.py), not a deep pool; raise
+    # these via env only after checking `worker_count * (size+overflow) < max_conn`.
+    db_pool_size: int = Field(5, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(10, alias="DB_MAX_OVERFLOW")
     # Server-wide HMAC pepper used (a) as a sentinel ("don't ship the dev value to prod")
     # and (b) as the key for X-Conduit-Server-Signature on outbound webhook deliveries.
     api_secret_key: str = Field(DEFAULT_API_SECRET, alias="API_SECRET_KEY")
