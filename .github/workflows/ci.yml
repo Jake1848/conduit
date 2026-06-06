@@ -29,7 +29,7 @@ jobs:
       RATE_LIMIT_PER_MINUTE: "100000"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -92,7 +92,7 @@ jobs:
       DATABASE_URL: "postgresql+asyncpg://conduit:conduit@localhost:5432/conduit_test"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -123,7 +123,7 @@ jobs:
         working-directory: sdk-python
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -145,7 +145,7 @@ jobs:
     # Advisory only — surfaces known-vulnerable deps without blocking merges, so a
     # transitive CVE doesn't wedge the pipeline. Triage via the job summary.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -176,7 +176,7 @@ jobs:
     # Blocking — a real leaked credential should fail the build. Known
     # intentional test/placeholder values are allowlisted in .gitleaks.toml.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Full history so gitleaks scans past commits, not just the tip.
           fetch-depth: 0
@@ -200,7 +200,7 @@ jobs:
         working-directory: sdk-js
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -229,7 +229,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to ghcr.io
         uses: docker/login-action@v3
