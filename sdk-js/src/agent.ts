@@ -54,6 +54,7 @@ export interface Transaction {
   direction: "send" | "receive";
   amountSats: number;
   feeSats: number;
+  platformFeeSats: number;
   destination: string | null;
   paymentHash: string | null;
   status: "pending" | "settled" | "failed";
@@ -98,6 +99,7 @@ function fromTx(t: TransactionJSON): Transaction {
     direction: t.direction,
     amountSats: t.amount_sats,
     feeSats: t.fee_sats,
+    platformFeeSats: t.platform_fee_sats ?? 0,
     destination: t.destination,
     paymentHash: t.payment_hash,
     status: t.status,

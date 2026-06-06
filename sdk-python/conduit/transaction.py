@@ -11,7 +11,8 @@ class Transaction:
     agent_id: str
     direction: str  # 'send' | 'receive'
     amount_sats: int
-    fee_sats: int
+    fee_sats: int  # LND routing fee
+    platform_fee_sats: int  # Conduit operator platform fee (revenue), separate from fee_sats
     destination: str | None
     payment_hash: str | None
     status: str
@@ -28,6 +29,7 @@ class Transaction:
             direction=data["direction"],
             amount_sats=int(data["amount_sats"]),
             fee_sats=int(data.get("fee_sats", 0)),
+            platform_fee_sats=int(data.get("platform_fee_sats", 0)),
             destination=data.get("destination"),
             payment_hash=data.get("payment_hash"),
             status=data["status"],

@@ -74,6 +74,10 @@ async def test_settled_payment_charges_and_keeps_fee(client):
     got = (await client.get(f"/v1/payments/{receipt['id']}")).json()
     assert got["platform_fee_sats"] == 5
 
+    # ...and surfaces in the transaction listing, not just the receipt.
+    txns = (await client.get(f"/v1/agents/{aid}/transactions?direction=send")).json()["data"]
+    assert txns[0]["platform_fee_sats"] == 5
+
 
 @pytest.mark.asyncio
 async def test_failed_payment_refunds_platform_fee(client):

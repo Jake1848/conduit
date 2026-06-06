@@ -201,27 +201,30 @@ function Hero() {
 /* ----------------------- STAT STRIP ----------------------- */
 function StatStrip() {
   const items = [
-    { lbl: 'Assets Under Policy', to: 48.2,  decimals: 1, prefix: '$', suffix: 'M', delta: '+ $4.2M · 30d', seed: 12 },
+    { lbl: 'Volume Routed',       to: 48.2,  decimals: 1, prefix: '$', suffix: 'M', delta: '+ $4.2M · 30d', seed: 12 },
     { lbl: 'M2M Settlements',     to: 12.8,  decimals: 1, prefix: '',  suffix: 'M', delta: '+ 38% MoM',    seed: 34 },
     { lbl: 'Settlement Latency',  to: 47,    decimals: 0, prefix: '',  suffix: '',  delta: 'p99 · 118ms', seed: 56, dn: true },
-    { lbl: 'Agents Live',         to: 2840,  decimals: 0, prefix: '',  suffix: '',  delta: '+ 12 / hr',   seed: 78 },
+    { lbl: 'Agents Deployed',     to: 2840,  decimals: 0, prefix: '',  suffix: '',  delta: '+ 12 / hr',   seed: 78 },
   ];
   return (
-    <div className="strip" data-reveal>
-      {items.map((it, i) => (
-        <div className="strip-item" key={it.lbl}>
-          <div className="num">
-            <CountUp to={it.to} decimals={it.decimals} prefix={it.prefix} duration={1400 + i * 120} />
-            <span className="unit">{it.suffix}</span>
+    <React.Fragment>
+      <div className="strip" data-reveal>
+        {items.map((it, i) => (
+          <div className="strip-item" key={it.lbl}>
+            <div className="num">
+              <CountUp to={it.to} decimals={it.decimals} prefix={it.prefix} duration={1400 + i * 120} />
+              <span className="unit">{it.suffix}</span>
+            </div>
+            <div className="lbl">{it.lbl}</div>
+            <div className={'delta' + (it.dn ? ' dn' : '')}>{it.delta}</div>
+            <div className="spark-wrap">
+              <Sparkline data={makeSeries(28, it.seed, { trend: it.dn ? -0.3 : 0.45, vol: 0.16, base: it.dn ? 0.6 : 0.35 })} />
+            </div>
           </div>
-          <div className="lbl">{it.lbl}</div>
-          <div className={'delta' + (it.dn ? ' dn' : '')}>{it.delta}</div>
-          <div className="spark-wrap">
-            <Sparkline data={makeSeries(28, it.seed, { trend: it.dn ? -0.3 : 0.45, vol: 0.16, base: it.dn ? 0.6 : 0.35 })} />
-          </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+      <div className="strip-note" data-reveal>Illustrative figures — Conduit is self-hosted and non-custodial; these numbers are example aggregates across self-run nodes, not funds held by Conduit.</div>
+    </React.Fragment>
   );
 }
 
@@ -442,7 +445,7 @@ function Cases() {
       demo: { l: 'MEAN TX',       v: '~ 2,400 sats · 41ms' } },
     { c: 'amber',  badge: 'AMBER · 04',  tag: '/ TREASURY',       t: 'Autonomous Treasury',
       p: 'Each agent holds, allocates, and rebalances its own balance sheet within rules you define. Programmable cashflow without a human in the loop — and every sat stays on your node.',
-      demo: { l: 'SELF-CUSTODIED', v: '$48.2M · 12,840 wallets' } },
+      demo: { l: 'SELF-CUSTODIED', v: 'your node · your keys' } },
   ];
   return (
     <section className="section col" id="cases">

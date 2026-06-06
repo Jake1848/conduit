@@ -145,6 +145,7 @@ class TransactionOut(BaseModel):
     direction: Direction
     amount_sats: int
     fee_sats: int
+    platform_fee_sats: int = Field(0, description="Conduit operator platform fee (revenue)")
     destination: str | None
     payment_hash: str | None
     status: TxStatus

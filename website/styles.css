@@ -428,6 +428,13 @@ img, svg { display: block; max-width: 100%; }
 .strip-item .delta { margin-top: 8px; font-family: var(--f-mono); font-size: 11px; color: var(--c-green); }
 .strip-item .delta.dn { color: var(--c-red); }
 .strip-item .spark-wrap { margin-top: 18px; height: 36px; width: 100%; }
+.strip-note {
+  border-bottom: 1px solid var(--line-1);
+  padding: 14px clamp(20px, 3vw, 44px);
+  font-family: var(--f-mono); font-size: 11px;
+  letter-spacing: 0.04em; line-height: 1.5;
+  color: var(--t-3); position: relative; z-index: 2;
+}
 @media (max-width: 880px) {
   .strip { grid-template-columns: 1fr 1fr; }
   .strip-item { border-bottom: 1px solid var(--line-1); }

@@ -18,6 +18,7 @@ def _to_out(t: Transaction) -> TransactionOut:
         direction=t.direction,  # type: ignore[arg-type]
         amount_sats=t.amount_sats,
         fee_sats=t.fee_sats,
+        platform_fee_sats=t.platform_fee_sats,
         destination=t.destination,
         payment_hash=t.payment_hash,
         status=t.status,  # type: ignore[arg-type]

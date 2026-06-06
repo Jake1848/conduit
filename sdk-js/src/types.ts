@@ -42,6 +42,7 @@ export interface TransactionJSON {
   direction: Direction;
   amount_sats: number;
   fee_sats: number;
+  platform_fee_sats: number;
   destination: string | null;
   payment_hash: string | null;
   status: TxStatus;
