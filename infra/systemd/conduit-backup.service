@@ -1,0 +1,72 @@
+# Off-box Postgres backup for the Conduit ledger, with a dead-man's-switch.
+#
+# Oneshot run by conduit-backup.timer (every 6h). It runs
+# backup_postgres_to_s3.sh — which dumps the prod Postgres container, then
+# uploads the newest dump to S3-compatible object storage — and ONLY on a clean
+# exit pings a healthchecks.io-style dead-man's-switch URL. If a run fails (or
+# the box is down, or the timer never fires), the ping is missed and the
+# external monitor pages whoever owns ops. A backup that silently stops is the
+# failure mode this is designed to catch.
+#
+# Install: see infra/README.md ("Scheduled off-box backups + dead-man's switch").
+#
+# Secrets/config come from an EnvironmentFile (0600, NOT in git), which must set
+# at least:
+#   BACKUP_S3_BUCKET=...                      # required by the upload script
+#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...   # S3 credentials
+#   AWS_ENDPOINT_URL=https://...              # for non-AWS providers (Hetzner etc.)
+#   BACKUP_HEALTHCHECK_URL=https://hc-ping.com/<uuid>   # dead-man's-switch ping
+# Optional overrides (see backup_postgres.sh): REPO_DIR, ENV_FILE, BACKUP_DIR, ...
+
+[Unit]
+Description=Conduit Postgres off-box backup (S3 + dead-man's-switch)
+Documentation=file:%h/conduit/infra/README.md
+# Backups touch the running prod stack; let Docker come up first. These are
+# soft ordering hints — `docker.service` may not exist on every host, so we
+# don't Require it.
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=conduit
+Group=conduit
+
+# Secrets + config. The leading '-' means "don't fail if the file is missing"
+# is intentionally NOT used: a missing env file (no bucket, no DMS URL) should
+# fail loudly rather than silently skip the off-box copy.
+EnvironmentFile=/etc/conduit/backup.env
+
+# Where the repo lives on the box. Overridable via the EnvironmentFile.
+Environment=REPO_DIR=/home/conduit/conduit
+
+# Run the upload-to-S3 backup. On success, ping the dead-man's switch so the
+# external monitor knows an off-box copy landed; on failure we deliberately do
+# NOT ping, so the monitor alerts. The ping is best-effort (`|| true`): a flaky
+# ping must never turn a *successful* backup into a *failed* systemd unit.
+#
+# We start the DMS with a /start ping (so the monitor can also measure runtime
+# and alert on a hung backup), and signal failure explicitly with a /fail ping
+# so you get paged immediately instead of waiting for the grace period.
+ExecStart=/usr/bin/env bash -c '\
+  if [ -n "${BACKUP_HEALTHCHECK_URL:-}" ]; then \
+    curl -fsS -m 10 --retry 3 "$BACKUP_HEALTHCHECK_URL/start" >/dev/null || true; \
+  fi; \
+  if bash "$REPO_DIR/infra/scripts/backup_postgres_to_s3.sh"; then \
+    [ -n "${BACKUP_HEALTHCHECK_URL:-}" ] && curl -fsS -m 10 --retry 3 "$BACKUP_HEALTHCHECK_URL" >/dev/null || true; \
+  else \
+    rc=$?; \
+    [ -n "${BACKUP_HEALTHCHECK_URL:-}" ] && curl -fsS -m 10 --retry 3 "$BACKUP_HEALTHCHECK_URL/fail" >/dev/null || true; \
+    exit $rc; \
+  fi'
+
+# Don't hang forever on a stuck dump/upload — fail (and thus miss the ping).
+TimeoutStartSec=1800
+
+# Light hardening (this unit shells out to docker + aws + curl, so we can't go
+# as strict as the LND units).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

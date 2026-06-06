@@ -64,6 +64,21 @@ class Settings(BaseSettings):
     platform_fee_min_sats: int = Field(1, alias="PLATFORM_FEE_MIN_SATS")
     platform_fee_max_sats: int = Field(1000, alias="PLATFORM_FEE_MAX_SATS")
 
+    # Solvency monitor — periodically reconciles the sum of virtual agent
+    # balances (liabilities) against the operator node's real liquidity (assets)
+    # and surfaces the ratio on /v1/metrics + /v1/health/ready. The check runs in
+    # every mode (mock or real LND); against mock LND the assets are the mock
+    # balance, so the ratio is meaningful in dev/test too.
+    solvency_check_interval_seconds: int = Field(300, alias="SOLVENCY_CHECK_INTERVAL_SECONDS")
+    # When True AND the latest snapshot shows liabilities > assets, money-IN paths
+    # (credit) fail-closed with a ConduitError. Default False so a live deployment
+    # only OBSERVES + warns — flipping this on is a deliberate operator decision.
+    solvency_enforce: bool = Field(False, alias="SOLVENCY_ENFORCE")
+
+    # Sentry error reporting. Initialized ONLY when a DSN is provided; otherwise a
+    # complete no-op (no network, no SDK init). See observability.py.
+    sentry_dsn: str | None = Field(None, alias="SENTRY_DSN")
+
     @field_validator("env", mode="after")
     @classmethod
     def _normalize_env(cls, v: str) -> str:

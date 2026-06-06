@@ -74,6 +74,22 @@ services:
     # Published only to localhost — nginx terminates TLS in front of it.
     ports:
       - "127.0.0.1:8000:8000"
+    # Liveness probe: /v1/health does NO I/O (it never touches the DB or LND),
+    # so a transient dependency blip won't restart-loop the container. It only
+    # answers "is the process up and serving?". start_period gives entrypoint.sh
+    # time to run `alembic upgrade head` before the first probe counts.
+    #
+    # The DEEPER readiness probe is GET /v1/health/ready: it checks the DB (→ 503
+    # if down) and reports LND sync status. deploy.sh health-gates on /ready so a
+    # new container isn't promoted until its money-path dependencies are live;
+    # we intentionally do NOT gate the *container* healthcheck on it (a DB blip
+    # must not kill an already-running, otherwise-healthy api).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   nginx:
     image: nginx:1.27-alpine

@@ -1,0 +1,26 @@
+# Runs conduit-backup.service every 6 hours (off-box Postgres backup + DMS ping).
+#
+# Install: see infra/README.md ("Scheduled off-box backups + dead-man's switch").
+#   sudo systemctl enable --now conduit-backup.timer
+#   systemctl list-timers conduit-backup.timer    # confirm next run
+#
+# This replaces the cron entry that used to call backup_postgres.sh: systemd
+# gives us Persistent=true (catch up a missed run after downtime) and a clean
+# place to load secrets via the service's EnvironmentFile.
+
+[Unit]
+Description=Run Conduit off-box Postgres backup every 6h
+Documentation=file:%h/conduit/infra/README.md
+
+[Timer]
+# Every 6 hours, aligned to the wall clock (00:00, 06:00, 12:00, 18:00).
+OnCalendar=*-*-* 00/6:00:00
+# If the box was off at the scheduled time, run as soon as it's back — a missed
+# window shouldn't leave the ledger without a fresh off-box copy.
+Persistent=true
+# Jitter so multiple boxes (or a fleet) don't all hammer S3 on the same second.
+RandomizedDelaySec=300
+Unit=conduit-backup.service
+
+[Install]
+WantedBy=timers.target

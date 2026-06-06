@@ -37,6 +37,20 @@ For multi-tenant or high-isolation use cases, you can run one LND per agent and
 have Conduit point at the right node based on agent_id. That's a deployment
 choice you make, not a SDK choice — the SDK contract is identical.
 
+## Agents are not a security boundary
+
+An agent is an **accounting and policy unit, not an authorization boundary.**
+Authorization is scope-based (`read` < `write` < `admin`), and the scope is the
+*only* boundary: any `write` key can act on **any** agent, and any `read` key can
+read the **whole fleet**. No key is bound to a specific agent, and no route
+filters by which key created an agent. So Conduit today is a **single-operator
+tool** — issue scoped keys to agents *you* run, and don't lean on agents to
+isolate mutually distrusting parties. For hard isolation, run a separate Conduit
+instance per tenant. See [Security → Authorization is scope-based, not
+per-agent](security.md#authorization-is-scope-based-not-per-agent) for the full
+picture. (Per-agent scoping is on the roadmap; agent creation already records the
+minting key on `api_key_id` for provenance.)
+
 ## Funding an agent
 
 A new agent starts at a balance of **0**. As the operator you credit it from

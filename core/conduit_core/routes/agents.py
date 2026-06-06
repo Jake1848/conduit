@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_scope
 from ..db import get_session
-from ..db.models import Agent, Policy, Transaction
+from ..db.models import Agent, APIKey, Policy, Transaction
 from ..errors import AgentNotFound, InsufficientBalance, InvalidInput
 from ..schemas import (
     AgentCreate,
@@ -19,6 +19,7 @@ from ..schemas import (
 from ..services import ledger
 from ..services.ids import agent_id as new_agent_id
 from ..services.ids import policy_id as new_policy_id
+from ..services.solvency import enforce_solvent
 
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
 
@@ -38,17 +39,23 @@ async def _locked_agent(session: AsyncSession, agent_id: str) -> Agent:
 async def create_agent(
     body: AgentCreate,
     session: AsyncSession = Depends(get_session),
-    _=Depends(require_scope("admin")),
+    api_key: APIKey = Depends(require_scope("admin")),
 ) -> AgentOut:
     existing = await session.execute(select(Agent).where(Agent.name == body.name))
     if existing.scalar_one_or_none():
         raise InvalidInput(f"Agent with name {body.name!r} already exists")
 
+    # Record which API key minted this agent (provenance only). This populates
+    # Agent.api_key_id for a future per-agent authz model; it does NOT change
+    # authorization today — see `concepts/security.md`. No route filters or
+    # rejects based on this column, so any admin/write/read key still acts on
+    # the whole fleet as before.
     agent = Agent(
         id=new_agent_id(),
         name=body.name,
         metadata_json=json.dumps(body.metadata) if body.metadata else None,
         balance_sats=0,
+        api_key_id=api_key.id,
     )
     session.add(agent)
 
@@ -156,6 +163,10 @@ async def credit_agent(
     Otherwise it's the manual top-up endpoint.
     """
     try:
+        # Fail-closed if the operator has enabled solvency enforcement and the
+        # ledger is currently under-backed by node liquidity — crediting adds a
+        # liability, so it's the path to gate. No-op unless SOLVENCY_ENFORCE=true.
+        enforce_solvent()
         agent = await _locked_agent(session, agent_id)
         tx = await ledger.credit(
             session,

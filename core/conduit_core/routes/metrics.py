@@ -13,6 +13,7 @@ from ..config import get_settings
 from ..db import get_session
 from ..db.models import Agent, Transaction
 from ..schemas import HourBucket, MetricsOut, TopAgentOut
+from ..services.solvency import latest_snapshot
 
 router = APIRouter(prefix="/v1", tags=["metrics"])
 
@@ -134,6 +135,21 @@ async def metrics(
         for aid, c in top_grp
     ]
 
+    # ---- solvency (latest monitor snapshot, if any) ----
+    snap = latest_snapshot()
+    if snap is not None:
+        liabilities_sats = snap.liabilities_sats
+        assets_sats = snap.assets_sats
+        solvency_ratio = snap.ratio
+        solvent = snap.solvent
+    else:
+        # Monitor hasn't run a pass yet — report zeros and "solvent" (nothing to
+        # back). Avoids the dashboard showing a scary "insolvent" on a cold boot.
+        liabilities_sats = 0
+        assets_sats = 0
+        solvency_ratio = None
+        solvent = True
+
     return MetricsOut(
         treasury_sats=int(treasury),
         active_agents=int(active),
@@ -145,4 +161,8 @@ async def metrics(
         top_agents=top_agents,
         fee_revenue_total_sats=int(fee_total),
         fee_revenue_today_sats=int(fee_today),
+        liabilities_sats=int(liabilities_sats),
+        assets_sats=int(assets_sats),
+        solvency_ratio=solvency_ratio,
+        solvent=solvent,
     )

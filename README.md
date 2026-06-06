@@ -145,6 +145,35 @@ turn Conduit off, your sats are still in your channels.
 
 See `infra/README.md` → "Security checklist".
 
+## Authorization model (single-operator today)
+
+Authorization in Conduit is **scope-based, not per-agent**. An API key carries
+one of three scopes — `read` < `write` < `admin` — and that scope is the *only*
+boundary:
+
+- A `read` key can read the **entire fleet** — every agent, balance, and
+  transaction.
+- A `write` key can act on **any agent** — send a payment from, or create an
+  invoice for, any agent in the ledger.
+- An `admin` key can create/delete agents, move balances, manage policies and
+  webhooks, and mint keys across the whole instance.
+
+There is **no per-agent boundary**: a key is not tied to a specific agent, and
+no route filters by which key created or "owns" an agent. Agents are an
+accounting and policy unit, **not a security boundary between mutually
+distrusting parties**.
+
+Concretely: **Conduit today is a single-operator tool.** Hand scoped keys to
+agents *you* run, not to third parties you don't trust with each other. If you
+need hard isolation between tenants, run a separate Conduit instance (and node)
+per tenant.
+
+> **Roadmap:** multi-tenant, per-agent scoping — where a key is bound to one
+> agent (or set of agents) and cannot read or act on the rest of the fleet — is
+> a planned enhancement. As a first step toward it, `create_agent` now records
+> the minting key on `Agent.api_key_id` for provenance. This is **provenance
+> only**: it does not yet change or enforce any authorization.
+
 ## License
 
 MIT.

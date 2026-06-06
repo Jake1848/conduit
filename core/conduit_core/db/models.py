@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -56,6 +57,17 @@ class Agent(Base):
     )
     transactions: Mapped[list["Transaction"]] = relationship(
         "Transaction", back_populates="agent", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        # A virtual agent balance must never go negative — a negative balance means
+        # a debit/payment over-spent the ledger (a double-spend or refund bug). The
+        # money path already guards this in application code under a row lock; this
+        # is the last-line database invariant so even a direct write or a missed
+        # check can't quietly strand the ledger below zero. CHECK constraints are
+        # always enforced by SQLite (no PRAGMA gates them) and by Postgres; added to
+        # already-deployed databases via alembic 0006.
+        CheckConstraint("balance_sats >= 0", name="ck_agents_balance_nonneg"),
     )
 
 

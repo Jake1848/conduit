@@ -19,6 +19,8 @@ dependencies = [
   "python-dotenv>=1.0",
   "structlog>=24.1",
   "bolt11>=2.1",
+  "prometheus-client>=0.20",
+  "sentry-sdk>=2.0",
 ]
 
 [project.optional-dependencies]

@@ -264,6 +264,17 @@ class MetricsOut(BaseModel):
     top_agents: list[TopAgentOut]  # most active today
     fee_revenue_total_sats: int = 0   # platform fees collected, all-time
     fee_revenue_today_sats: int = 0   # platform fees collected since 00:00 UTC
+    # ---- solvency (latest monitor snapshot) ----
+    # Σ agent balances + pending outbound — what the operator's node must back.
+    liabilities_sats: int = 0
+    # Channel-local + confirmed on-chain liquidity backing the ledger.
+    assets_sats: int = 0
+    # assets / liabilities. None when there are no liabilities (undefined ratio)
+    # or when no snapshot exists yet (monitor hasn't run its first pass).
+    solvency_ratio: float | None = None
+    # True when the ledger is currently backed (assets >= liabilities). Defaults
+    # True (no claims to back) until the first snapshot lands.
+    solvent: bool = True
 
 
 # ---------- Platform fees (operator revenue) ----------

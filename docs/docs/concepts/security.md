@@ -32,13 +32,47 @@ about who custodies what — the operator level and the agent level are differen
 Conduit's job is to be the **policy + accounting layer** in front of a node you
 own. The rest of this page is about what that layer does and does not protect.
 
+## Authorization is scope-based, not per-agent
+
+Be explicit about the shape of the authorization model, because it determines
+who you can safely hand keys to.
+
+Every API key carries exactly one **scope** — `read` < `write` < `admin` — and
+that scope is the **only** access boundary:
+
+| scope   | reach |
+| ------- | ----- |
+| `read`  | reads the **whole fleet**: every agent, balance, and transaction |
+| `write` | acts on **any agent**: send payments, create invoices for any agent |
+| `admin` | the whole instance: create/delete agents, move balances, manage policies and webhooks, mint keys |
+
+There is **no per-agent boundary.** A key is not bound to a specific agent, and
+no route filters by which key created or "owns" an agent. Any write key can act
+on any agent; any read key can read the entire fleet. **Agents are an accounting
+and policy unit, not a security boundary between mutually distrusting parties.**
+
+The practical consequence: **Conduit today is a single-operator tool.** Issue
+scoped keys to agents *you* run; do not use agents to isolate third parties you
+don't trust with one another. If you need hard isolation between tenants, run a
+separate Conduit instance (and node) per tenant.
+
+!!! note "Roadmap"
+    Multi-tenant, per-agent scoping — binding a key to one agent (or a set of
+    agents) so it cannot read or act on the rest of the fleet — is a planned
+    enhancement. As a first step, agent creation now records the minting key on
+    `Agent.api_key_id` for **provenance only**; it does not yet change or
+    enforce authorization.
+
 ## In scope
 
 - **An LLM agent goes off the rails** and tries to drain its wallet. The
   policy engine caps every payment before it reaches LND. Fail-closed.
 - **A stolen API key**. Keys are scoped (`read`/`write`/`admin`). A `read`
   key cannot move funds. Keys are stored as bcrypt hashes — the operator
-  sees the raw value exactly once at creation.
+  sees the raw value exactly once at creation. Note the scope is the *whole*
+  boundary: a stolen `write`/`admin` key reaches **every** agent, not just
+  one — see [Authorization is scope-based, not per-agent](#authorization-is-scope-based-not-per-agent).
+  Revoke a leaked key via `DELETE /v1/api-keys/{id}`.
 - **A vendor going hostile**. Add their address to `blocklist`; further
   payments to them are immediately denied.
 - **Webhook delivery to a hostile endpoint**. Every webhook body is

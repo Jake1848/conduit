@@ -7,6 +7,7 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..schemas import ComponentHealth, HealthOut, ReadyOut, StatusOut
 from ..services.lnd import get_lnd
+from ..services.solvency import latest_snapshot
 
 router = APIRouter(prefix="/v1", tags=["system"])
 
@@ -47,7 +48,25 @@ async def ready(response: Response) -> ReadyOut:
         lnd_detail = type(e).__name__
     components["lnd"] = ComponentHealth(ok=lnd_ok, detail=lnd_detail)
 
-    overall = db_ok  # DB down = genuinely not ready; LND degradation is surfaced only.
+    # Solvency — SOFT component: reflects whether the operator's node liquidity
+    # currently backs the agent ledger. Does NOT 503 by default (a transient dip
+    # while liquidity reshuffles shouldn't restart-loop the API); it surfaces the
+    # state so an operator's monitoring can alert. Reads the monitor's latest
+    # snapshot — `ok=True` until the first pass lands (nothing to back yet).
+    snap = latest_snapshot()
+    if snap is None:
+        components["solvency"] = ComponentHealth(ok=True, detail="no_snapshot_yet")
+    else:
+        sol_detail: str | None = None
+        if snap.error is not None:
+            sol_detail = f"lnd_balance_error:{snap.error}"
+        elif not snap.solvent:
+            sol_detail = (
+                f"insolvent:liabilities={snap.liabilities_sats},assets={snap.assets_sats}"
+            )
+        components["solvency"] = ComponentHealth(ok=snap.solvent, detail=sol_detail)
+
+    overall = db_ok  # DB down = genuinely not ready; LND/solvency are surfaced only.
     if not overall:
         response.status_code = 503
     return ReadyOut(

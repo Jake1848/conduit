@@ -51,9 +51,12 @@ bash scripts/setup_channels.sh
 # 7. Schedule the static channel backup off-box
 crontab -e   # add: */15 * * * * bash /home/conduit/conduit/infra/scripts/backup_channels.sh
 
-# 8. Schedule Postgres backups (production API stack)
+# 8. Schedule OFF-BOX Postgres backups via the systemd timer (with a
+#    dead-man's switch). See "Scheduled off-box backups" below for the env file.
 mkdir -p /home/conduit/backups/postgres
-crontab -e   # add: 0 */6 * * * bash /home/conduit/conduit/infra/scripts/backup_postgres.sh
+sudo install -m 0644 systemd/conduit-backup.service systemd/conduit-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now conduit-backup.timer
 ```
 
 ## Wallet auto-unlock
@@ -93,18 +96,100 @@ AWS_ENDPOINT_URL=https://fsn1.your-objectstorage.com \
 bash scripts/backup_postgres_to_s3.sh
 ```
 
-The local-only script is the default; periodically restore a dump into a
-throwaway database to confirm the backups are actually usable.
+Periodically restore a dump into a throwaway database to confirm the backups
+are actually usable.
 
-> ⚠️ **Gap on the live box (as of the 0.6.0 audit):** only `backup_postgres.sh`
-> (local) is scheduled — every dump lives on the same disk as the database it
-> protects, so a disk/host loss takes both. The off-box `backup_postgres_to_s3.sh`
-> exists but is **not yet scheduled** because no S3 bucket is provisioned. Once a
-> bucket is available (e.g. Hetzner Object Storage), replace the cron with the S3
-> variant (set `BACKUP_S3_BUCKET` + `AWS_ENDPOINT_URL` and credentials in a
-> `0600` env file) so the ledger survives host loss. Consider a dead-man's-switch
-> (e.g. healthchecks.io) that the backup pings, alerting if no off-box copy lands
-> within ~12h.
+### Scheduled off-box backups + dead-man's switch
+
+The off-box backup runs on a **systemd timer** (`systemd/conduit-backup.timer`
+→ `conduit-backup.service`), not cron. It runs `backup_postgres_to_s3.sh` every
+6 hours and, **only on success**, pings a [healthchecks.io](https://healthchecks.io)-style
+dead-man's-switch URL. A failed run (or a box that's down, or a timer that never
+fires) misses the ping, and the external monitor pages you. A backup that
+*silently stops* is exactly the failure this catches.
+
+Secrets/config live in a `0600` env file — **never in git** — read by the unit
+via `EnvironmentFile=/etc/conduit/backup.env`:
+
+```bash
+# /etc/conduit/backup.env  (chmod 0600, owned by conduit)
+BACKUP_S3_BUCKET=my-bucket
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_ENDPOINT_URL=https://fsn1.your-objectstorage.com   # for non-AWS providers
+BACKUP_HEALTHCHECK_URL=https://hc-ping.com/<your-uuid> # the dead-man's switch
+# optional overrides: REPO_DIR, ENV_FILE, BACKUP_DIR, RETENTION_DAYS, ...
+```
+
+Install and enable:
+
+```bash
+sudo mkdir -p /etc/conduit
+sudo install -m 0600 -o conduit -g conduit /dev/stdin /etc/conduit/backup.env <<'EOF'
+BACKUP_S3_BUCKET=my-bucket
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_ENDPOINT_URL=https://fsn1.your-objectstorage.com
+BACKUP_HEALTHCHECK_URL=https://hc-ping.com/<your-uuid>
+EOF
+
+sudo install -m 0644 systemd/conduit-backup.service systemd/conduit-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now conduit-backup.timer
+
+# Verify
+systemctl list-timers conduit-backup.timer     # next/last run
+sudo systemctl start conduit-backup.service     # run once now
+journalctl -u conduit-backup.service -n 50      # check the last run
+```
+
+On the dead-man's-switch side, create a check (e.g. on healthchecks.io) with a
+period of 6h and a grace window of ~1–2h, copy its ping URL into
+`BACKUP_HEALTHCHECK_URL`, and point it at a pager/email. The unit also sends a
+`/start` ping when a run begins and a `/fail` ping on error, so the monitor can
+flag a *hung* backup and alert immediately on a *failed* one — not just a
+*missing* one.
+
+## Deploys & rollback
+
+`scripts/deploy.sh` codifies the previously-manual "tar the image over SSH, load
+it, migrate, recreate the api" process into one idempotent, health-gated command.
+It snapshots the running image before promoting the new one, runs
+`alembic upgrade head` (via the api entrypoint), recreates **only** the api,
+waits for the deeper readiness probe (`/v1/health/ready`), reloads nginx, and
+**auto-rolls-back** if the new container never goes ready.
+
+Image-tag convention (matches the existing manual flow):
+
+| Tag                        | Meaning |
+| -------------------------- | ------- |
+| `conduit/core:prod`        | what `docker-compose.prod.yml` runs ("current") |
+| `conduit/core:prod-rollback` | the image that was current before the last deploy |
+| `conduit/core:prod-vX.Y.Z` | immutable per-version archive tag (when `--version` is given) |
+
+```bash
+# On the box — rebuild from source and deploy:
+bash scripts/deploy.sh deploy --build
+
+# On the box — deploy a pinned image tar produced by `docker save`:
+bash scripts/deploy.sh deploy --image-tar /tmp/conduit-core-1.2.3.tar --version 1.2.3
+
+# Pull a registry tag and deploy:
+bash scripts/deploy.sh deploy --pull ghcr.io/jake1848/conduit:1.2.3 --version 1.2.3
+
+# Drive a REMOTE box over SSH (copies the script + tar, re-execs there):
+DEPLOY_HOST=conduit@167.233.27.130 \
+  bash scripts/deploy.sh deploy --image-tar /tmp/conduit-core-1.2.3.tar --version 1.2.3
+
+# One-command rollback to the previously-deployed image:
+bash scripts/deploy.sh rollback
+```
+
+A failed health gate during `deploy` triggers an automatic rollback to
+`conduit/core:prod-rollback`; `deploy.sh rollback` does the same on demand. The
+script is `set -euo pipefail`, every step is idempotent (safe to re-run), and it
+reads the prod stack location from `REPO_DIR` / `COMPOSE_FILE` / `ENV_FILE`
+(see the top of the script for all knobs).
 
 ## Platform fee configuration (your revenue)
 
@@ -137,7 +222,8 @@ with no platform fee. Track what you've earned via `GET /v1/metrics`.
 - [ ] Bootstrap/admin key (your master key to this deployment) stored in a secret
       manager, never committed, and rotated if it ever leaks
 - [ ] Channel backup file (`channel.backup`) replicated to a separate host
-- [ ] Postgres backups scheduled (`backup_postgres.sh`) and restore-tested; off-box copy if value justifies it
+- [ ] Off-box Postgres backups scheduled (`conduit-backup.timer`), restore-tested, and wired to a dead-man's switch (`BACKUP_HEALTHCHECK_URL`)
+- [ ] `/etc/conduit/backup.env` is `0600`, owned by `conduit`, and never committed
 - [ ] `vercel env` (or wherever the API key lives) restricted to the deployment env
 - [ ] HTTPS via certbot in front of the Core API container
 

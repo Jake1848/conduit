@@ -14,15 +14,36 @@ the server at private/loopback/link-local/cloud-metadata addresses
     private A record is still rejected).
   - IPv4-mapped IPv6 (``::ffff:127.0.0.1``) is unwrapped before classifying.
 
-`safe_get(url, ...)` runs the guard, then fetches with redirects DISABLED
-(a 30x to an internal address would bypass the pre-flight check) and a
-hard cap on the response body size.
+`safe_get(url, ...)` / `safe_post(url, ...)` run the guard, then fetch with
+redirects DISABLED (a 30x to an internal address would bypass the pre-flight
+check) and a hard cap on the response body size.
 
-Residual risk: there is a TOCTOU window between DNS resolution in
-`assert_safe_url` and the connection httpx makes — a DNS-rebinding attacker
-who flips the record to a private IP in between could still slip through.
-Closing that fully requires pinning the resolved IP onto the connection
-(custom transport / resolver). See follow-ups.
+DNS-rebinding / TOCTOU is closed by PINNING. `assert_safe_url` resolving and
+then httpx independently re-resolving on connect would leave a window where a
+low-TTL attacker flips the record to a private IP between the two lookups.
+Instead, the actual fetch is routed through `_PinnedTransport`, a custom
+``httpx.AsyncHTTPTransport`` that, *inside* ``handle_async_request`` and right
+before the socket is opened:
+
+  1. resolves the original hostname ONCE,
+  2. validates EVERY resolved address with `_is_unsafe_ip` (rejecting the
+     whole request if any is unsafe — identical policy to assert_safe_url),
+  3. rewrites the request URL host to the single validated IP it picked, so
+     the TCP connection goes to exactly that address (no further DNS), and
+  4. preserves the original hostname for the ``Host`` header (httpx already
+     set it from the original URL) and for TLS SNI / certificate verification
+     via the httpcore ``sni_hostname`` request extension.
+
+Because resolution, validation and the connect all happen in the same call
+with no second lookup, there is no TOCTOU window: the bytes are sent to the
+exact IP that was validated, and TLS is still verified against the real
+hostname's certificate. A literal-IP host is validated and used as-is.
+
+Note: the on-the-wire connection deliberately targets an IP literal while
+presenting the real hostname via SNI + Host. This preserves certificate
+verification (the cert is checked against the hostname, not the IP). It does
+NOT support servers that rely on a *different* SNI than their Host header, but
+LNURL-pay / webhook endpoints do not.
 """
 
 from __future__ import annotations
@@ -46,31 +67,25 @@ def _is_unsafe_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     # address is classified as the IPv4 loopback it really is.
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
-    return (
-        ip.is_private  # RFC1918 10/8, 172.16/12, 192.168/16 + IPv6 ULA fc00::/7
-        or ip.is_loopback  # 127/8, ::1
-        or ip.is_link_local  # 169.254/16 (covers 169.254.169.254), fe80::/10
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified  # 0.0.0.0, ::
-    )
+    # ALLOWLIST, not denylist: permit ONLY globally-routable public addresses.
+    # `is_global` is False for RFC1918, loopback, link-local (incl the
+    # 169.254.169.254 cloud-metadata IP), CGNAT/RFC6598 (100.64.0.0/10), IPv6 ULA,
+    # multicast, reserved, and unspecified — and for any future non-global range —
+    # so we don't have to enumerate (and risk missing) each class. This closes the
+    # CGNAT gap a denylist of is_private/is_loopback/... leaves open.
+    return not ip.is_global
 
 
-def assert_safe_url(url: str) -> None:
-    """Raise InvalidInput unless `url` is an https URL whose host resolves
-    only to public, routable IP addresses.
+def _resolve_and_validate(host: str, port: int) -> list[str]:
+    """Resolve `host` and validate EVERY address; return the safe IP strings.
 
-    All addresses returned by DNS are checked; if any one is unsafe the URL
-    is rejected, so a split-horizon / dual-record host cannot smuggle a
-    private target past us.
+    Raises InvalidInput if the host is a literal/resolves to any unsafe
+    address, if it cannot be resolved, or if it resolves to nothing. This is
+    the single chokepoint shared by `assert_safe_url` (pre-flight) and
+    `_PinnedTransport` (at connect time) so both apply identical policy.
+
+    A literal-IP host short-circuits DNS and is returned (validated) as-is.
     """
-    parts = urlsplit(url)
-    if parts.scheme != "https":
-        raise InvalidInput(f"Refusing non-https URL: {url!r}")
-    host = parts.hostname
-    if not host:
-        raise InvalidInput(f"URL has no host: {url!r}")
-
     # If the host is already a literal IP, classify it directly — getaddrinfo
     # would happily echo it back but being explicit is clearer.
     try:
@@ -80,18 +95,19 @@ def assert_safe_url(url: str) -> None:
     if literal is not None:
         if _is_unsafe_ip(literal):
             raise InvalidInput(f"Refusing URL pointing at non-public address {host!r}")
-        return
+        return [host]
 
     try:
-        infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as e:
         raise InvalidInput(f"Could not resolve host {host!r}: {e}") from e
     if not infos:
         raise InvalidInput(f"Host {host!r} did not resolve to any address")
 
+    resolved: list[str] = []
     for info in infos:
         sockaddr = info[4]
-        ip_str = sockaddr[0]
+        ip_str = str(sockaddr[0])
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError as err:
@@ -103,6 +119,84 @@ def assert_safe_url(url: str) -> None:
             raise InvalidInput(
                 f"Refusing URL: host {host!r} resolves to non-public address {ip_str}"
             )
+        resolved.append(ip_str)
+    return resolved
+
+
+def assert_safe_url(url: str) -> None:
+    """Raise InvalidInput unless `url` is an https URL whose host resolves
+    only to public, routable IP addresses.
+
+    All addresses returned by DNS are checked; if any one is unsafe the URL
+    is rejected, so a split-horizon / dual-record host cannot smuggle a
+    private target past us.
+
+    This is a pre-flight check; the actual fetch re-validates atomically at
+    connect time via `_PinnedTransport`, so a DNS-rebinding flip between this
+    call and the connection cannot reach a private IP.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        raise InvalidInput(f"Refusing non-https URL: {url!r}")
+    host = parts.hostname
+    if not host:
+        raise InvalidInput(f"URL has no host: {url!r}")
+    _resolve_and_validate(host, parts.port or 443)
+
+
+class _PinnedTransport(httpx.AsyncHTTPTransport):
+    """An httpx transport that resolves+validates the hostname and pins the
+    connection to a single validated IP, closing the DNS-rebinding window.
+
+    The validation runs inside `handle_async_request`, in the same call that
+    opens the socket, so there is no gap for the record to be flipped:
+
+      - resolve the original hostname once, reject if ANY address is unsafe,
+      - rewrite ``request.url`` host to one validated IP (httpcore connects to
+        that exact address — no second DNS lookup),
+      - keep the ``Host`` header as the original hostname (httpx already set
+        it from the original URL; rewriting only the URL host leaves it),
+      - set the ``sni_hostname`` extension to the original hostname so TLS SNI
+        and certificate verification use the real name, not the IP literal.
+    """
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        hostname = request.url.host
+        port = request.url.port or 443
+
+        # If the URL host is already a literal IP, _resolve_and_validate will
+        # validate and echo it; no rewrite/SNI override is needed.
+        try:
+            ipaddress.ip_address(hostname)
+            is_literal = True
+        except ValueError:
+            is_literal = False
+
+        validated_ips = _resolve_and_validate(hostname, port)
+        # Prefer the same address family the caller would have used; just take
+        # the first validated address — all of them passed the safety check.
+        pinned_ip = validated_ips[0]
+
+        if not is_literal:
+            # Connect to the pinned IP; keep the real hostname for Host + SNI.
+            request.url = request.url.copy_with(host=pinned_ip)
+            request.extensions = dict(request.extensions)
+            request.extensions["sni_hostname"] = hostname
+
+        return await super().handle_async_request(request)
+
+
+def _pinned_client(timeout: float) -> httpx.AsyncClient:
+    """A short-lived client whose transport pins connections to validated IPs.
+
+    Redirects are forced off (a 30x could otherwise bounce onto an internal
+    address after the per-request validation).
+    """
+    return httpx.AsyncClient(
+        transport=_PinnedTransport(),
+        follow_redirects=False,
+        timeout=timeout,
+    )
 
 
 async def safe_get(
@@ -115,13 +209,16 @@ async def safe_get(
 ) -> httpx.Response:
     """SSRF-safe GET.
 
-    Validates `url` with `assert_safe_url`, fetches with redirects DISABLED
-    (so a 30x cannot bounce us onto an internal address after the check), and
-    rejects responses larger than `max_bytes`.
+    Validates `url` with `assert_safe_url` up front, then fetches through an
+    IP-pinning transport (see `_PinnedTransport`) that re-resolves and
+    re-validates atomically at connect time — so a DNS-rebinding flip can't
+    reach a private IP. Redirects are DISABLED and responses larger than
+    `max_bytes` are rejected.
 
-    Pass `client` to reuse an existing session; if omitted a short-lived one
-    is created. `follow_redirects` is forced False regardless of the client's
-    own default.
+    `client`, if supplied, is IGNORED for the connection itself: pinning
+    requires a per-request transport, so a fresh pinned client is always used.
+    The parameter is kept for backwards compatibility with callers that pass a
+    shared session.
     """
     assert_safe_url(url)
 
@@ -142,9 +239,7 @@ async def safe_get(
             resp._content = b"".join(chunks)
             return resp
 
-    if client is not None:
-        return await _do(client)
-    async with httpx.AsyncClient(follow_redirects=False, timeout=timeout) as c:
+    async with _pinned_client(timeout) as c:
         return await _do(c)
 
 
@@ -158,16 +253,16 @@ async def safe_post(
 ) -> httpx.Response:
     """SSRF-safe POST (used for outbound webhook delivery).
 
-    Validates `url` with `assert_safe_url` then POSTs with redirects DISABLED.
-    A `client` may be supplied to reuse a session; `follow_redirects` is
-    forced False.
+    Validates `url` with `assert_safe_url` up front, then POSTs through the
+    IP-pinning transport (atomic re-validate at connect time) with redirects
+    DISABLED.
+
+    `client`, if supplied, is IGNORED for the connection itself (pinning needs
+    a per-request transport); the parameter is kept for backwards
+    compatibility with callers that pass a shared session.
     """
     assert_safe_url(url)
-    if client is not None:
-        return await client.post(
-            url, content=content, headers=headers, follow_redirects=False, timeout=timeout
-        )
-    async with httpx.AsyncClient(follow_redirects=False, timeout=timeout) as c:
+    async with _pinned_client(timeout) as c:
         return await c.post(
             url, content=content, headers=headers, follow_redirects=False, timeout=timeout
         )
