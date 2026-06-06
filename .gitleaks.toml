@@ -1,0 +1,38 @@
+# gitleaks configuration for Conduit
+#
+# Inherits gitleaks' built-in rule set, then allowlists the handful of
+# intentional test fixtures and documentation placeholders that would
+# otherwise false-positive. Real leaked credentials must NOT be added here —
+# rotate them instead.
+#
+# Docs: https://github.com/gitleaks/gitleaks
+
+# Extend (do not replace) the default rule set.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Conduit intentional test/placeholder values and example templates"
+
+# Known fixture / placeholder secrets. These are deliberately fake API keys and
+# dev-only secrets committed for tests and documentation — never live credentials.
+regexes = [
+  # API key test fixtures used by the suite and bootstrap.
+  '''ck_test_dev_root''',
+  '''ck_test_regtest_root_key''',
+  '''ck_test_root_for_tests''',
+  '''ck_test_ci_root''',
+  '''ck_live_test_for_assertion''',
+  # Documentation placeholders (e.g. README/quickstart) — not real keys.
+  '''ck_live_xxxx[a-zA-Z0-9_]*''',
+  '''ck_live_admin[a-zA-Z0-9_]*''',
+  # Dev-only signing secret shipped as a "change me" default.
+  '''dev-secret-change-me''',
+]
+
+# Template/example env files contain placeholder values by design.
+paths = [
+  '''(^|/)\.env\..*\.example$''',
+  '''(^|/)\.env\.example$''',
+  '''\.gitleaks\.toml$''',
+]

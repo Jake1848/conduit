@@ -94,7 +94,7 @@ from `fee_sats` (the LND routing fee). Set `PLATFORM_FEE_PERCENT=0` to disable.
 ## Next
 
 - [Concepts → Policies](concepts/policies.md) — what the engine actually checks
-- [Concepts → Security](concepts/security.md) — the self-hosted, non-custodial trust model
+- [Concepts → Security](concepts/security.md) — the self-hosted trust model (and what's operator-custodied)
 - [Platform fees](api/fees.md) — your configurable per-transaction revenue
 - [SDKs → MCP](sdk/mcp.md) — plug into Claude Desktop or any MCP client
 - [Going to production](https://github.com/Jake1848/conduit/blob/main/infra/README.md) — the runbook for your own node

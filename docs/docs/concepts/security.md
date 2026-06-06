@@ -2,10 +2,12 @@
 
 What Conduit defends against, and what it doesn't.
 
-## Non-custodial by construction
+## Self-hosted by construction
 
-Conduit is software **you** run, not a service that holds your money. The trust
-model is self-hosted:
+Conduit is software **you** run, not a service that holds your money. Be precise
+about who custodies what — the operator level and the agent level are different.
+
+**At the operator level, you are self-hosted:**
 
 - **You control the node.** Conduit talks to LND only through the macaroon you
   mount into it. The seed and the channels are yours; Conduit never holds funds
@@ -13,11 +15,19 @@ model is self-hosted:
 - **You control the keys.** The bootstrap API key is **your** master key to
   **your own** Conduit instance — it mints the scoped keys you hand to agents.
   Guard it like the LND macaroon.
-- **You control the ledger.** Agent balances are virtual sub-balances of your
-  node. You credit and debit them; the underlying sats stay in your channels.
-- **No third party in the path.** There is no Conduit-operated wallet, no hosted
-  custody, no middleman that can freeze, seize, or rehypothecate your sats. Turn
-  Conduit off and the money is still in your channels.
+- **No Conduit SaaS in the path.** There is no Conduit-operated wallet and
+  nothing that phones home. No outside middleman can freeze, seize, or
+  rehypothecate your sats. Turn Conduit off and the money is still in your
+  channels.
+
+**At the agent level, Conduit is custodial by construction:**
+
+- Agent balances are **virtual IOUs** in Conduit's ledger — not on-chain or
+  channel balances of their own. As operator **you** credit, debit, and can
+  sweep them. The underlying sats stay in your channels under your keys.
+- An agent holds a **scoped API key, not a signing key.** It can request
+  payments within its policy; it can never touch a Bitcoin private key. The
+  operator is the custodian for every agent.
 
 Conduit's job is to be the **policy + accounting layer** in front of a node you
 own. The rest of this page is about what that layer does and does not protect.

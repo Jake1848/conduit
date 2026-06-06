@@ -32,6 +32,8 @@ from sqlalchemy import select
 
 from ..config import get_settings
 from ..db.models import Webhook
+from ..errors import InvalidInput
+from .safe_http import safe_post
 
 log = structlog.get_logger(__name__)
 
@@ -161,7 +163,11 @@ async def _deliver_one(
     delay = 1.0
     for attempt in range(max_retries):
         try:
-            r = await client.post(wh.url, content=body, headers=headers)
+            # SSRF guard (defense in depth): the webhook URL is operator/user
+            # supplied, so route the outbound POST through the same validator
+            # used for LNURL fetches. A rejected URL is deterministic — log and
+            # give up rather than retry.
+            r = await safe_post(wh.url, content=body, headers=headers, client=client)
             if r.status_code < 400:
                 log.info(
                     "webhook_delivered",
@@ -178,6 +184,22 @@ async def _deliver_one(
                 status=r.status_code,
                 attempt=attempt + 1,
             )
+        except InvalidInput as e:
+            # URL pointed at a non-public / non-https target — retrying won't
+            # change the outcome, so stop here.
+            reason = (
+                e.detail.get("detail", str(e.detail))
+                if isinstance(e.detail, dict)
+                else e.detail
+            )
+            log.error(
+                "webhook_url_rejected",
+                webhook_id=wh.id,
+                event=event,
+                url=wh.url,
+                error=reason,
+            )
+            return
         except httpx.HTTPError as e:
             log.warning(
                 "webhook_delivery_error",

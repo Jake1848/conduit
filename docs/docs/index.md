@@ -1,13 +1,20 @@
 # Conduit
 
-**Self-hosted, non-custodial Bitcoin payment infrastructure for autonomous AI agents.**
+**Self-hosted Bitcoin Lightning payment infrastructure for autonomous AI agents.**
 
 Conduit is software tooling you run on **your own** infrastructure, in front of
-**your own** LND node, signed by **your own** keys. It gives any AI agent a
+**your own** LND node, with **your own** keys. It gives any AI agent a virtual
 Lightning wallet, a spending policy, and an API to send, receive, and account
 for Bitcoin payments programmatically — with hard guardrails the agent cannot
-override. Conduit **never touches your funds**: there is no Conduit-operated
-wallet and no third party in the payment path. Your node, your keys, your rules.
+override. There is no Conduit SaaS: you host it, Conduit never holds your funds
+and never phones home. The agents you create are **virtual sub-balances** in a
+ledger you, the operator, control — they hold a scoped API key, not a signing
+key. Your node, your keys, your rules.
+
+!!! info "Status — v0.8.0"
+    Conduit runs **live on testnet** (testnet/regtest today). Mainnet is a
+    supported target the software is built for but has not yet been exercised in
+    production. There is no external security audit yet — test on testnet first.
 
 ```python
 from conduit import Agent
@@ -38,15 +45,18 @@ payment rail that is:
 - **Programmable** — every action is an API call, not a UI flow.
 - **Bounded** — the operator sets a budget; the agent stays inside it.
 - **Auditable** — every payment is a row in the ledger with a memo.
-- **Self-custodial** — you run it; your LND node, your keys, your channels.
+- **Self-hosted** — you run it; your LND node, your keys, your channels.
 
-## Self-hosted & non-custodial
+## Self-hosted
 
 You deploy Conduit (a 5-minute Docker bring-up) against your own LND node.
-Conduit is the policy + accounting layer in front of a node **you** control — it
-never holds your money. The bootstrap API key is **your** master key to **your
-own** system, and the agents you create are virtual sub-balances on **your**
-node, credited and debited by **you**. See
+Conduit is the policy + accounting layer in front of a node **you** control —
+there is no Conduit SaaS, it never holds your money and never phones home. The
+bootstrap API key is **your** master key to **your own** system. The agents you
+create are virtual sub-balances in Conduit's ledger — operator-controlled IOUs
+that **you** credit, debit, and can sweep; an agent holds a scoped API key, not
+a signing key, so Conduit is custodial *at the agent layer by construction*
+while the sats stay in **your** channels under **your** keys. See
 [Concepts → Security](concepts/security.md) for the full trust model.
 
 ## Built-in revenue

@@ -26,13 +26,18 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.prod
+secrets/
+*/secrets/
 *.macaroon
 admin.macaroon
 tls.cert
 tls.key
+wallet_password
 channel.backup
 seed.txt
 *.seed
+*.backup
 
 # Databases
 *.db
@@ -55,6 +60,8 @@ Thumbs.db
 
 # Conduit specific
 Conduit.zip
+Conduit*.zip
+design_handoff_conduit_console/
 .claude/
 core/data/
 .thumbnail

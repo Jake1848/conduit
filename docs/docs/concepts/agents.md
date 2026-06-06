@@ -1,9 +1,11 @@
 # Agents
 
-An **agent** is a named virtual wallet on **your own** node, bound to one
-operator-issued API key, with an optional spending policy attached. You — the
-operator running Conduit — create agents and fund them; their balances are
-sub-balances of your LND node, never held by Conduit.
+An **agent** is a named virtual wallet — a balance in **your** Conduit ledger,
+backed by **your own** node — bound to one operator-issued API key, with an
+optional spending policy attached. You — the operator running Conduit — create
+agents and fund them. Their balances are operator-controlled sub-balances
+(virtual IOUs) backed by your LND node's channels; the agent holds an API key,
+not a signing key.
 
 ```python
 agent = Agent.create(name="compute-router-7", daily_limit=50_000)
@@ -26,8 +28,10 @@ its own transaction history, and its own policy.
 
 In the default deployment **you** run **one** LND node, and each agent gets a
 virtual sub-balance on that node, enforced by the policy engine. Conduit tracks
-the ledger; the sats stay in **your** channels — Conduit never custodies them.
-This is the simplest model and works well up to mid-volume.
+the ledger; the sats stay in **your** channels under **your** keys. Conduit is
+custodial *for the agents* — their balances are operator-controlled IOUs you can
+credit, debit, or sweep — while the operator stays self-hosted. This is the
+simplest model and works well up to mid-volume.
 
 For multi-tenant or high-isolation use cases, you can run one LND per agent and
 have Conduit point at the right node based on agent_id. That's a deployment

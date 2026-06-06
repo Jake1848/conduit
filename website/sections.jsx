@@ -19,7 +19,7 @@ function Portal() {
       <span className="portal-hud-c bl" />
       <span className="portal-hud-c br" />
       <span className="portal-tag top">CONDUIT · NODE 001</span>
-      <span className="portal-tag bottom">⚡ LIGHTNING · MAINNET</span>
+      <span className="portal-tag bottom">⚡ LIGHTNING · TESTNET</span>
 
       <svg viewBox="0 0 480 480">
         <defs>
@@ -153,12 +153,14 @@ function Hero() {
       <div>
         <div className="hero-status" data-reveal>
           <span className="dot" />
-          <span className="live">LIVE</span>
+          <span className="live">DEMO</span>
           <span className="sep">/</span>
           <span>Settled</span>
           <span className="gold">{sats.toLocaleString()} sats</span>
           <span>in</span>
           <span className="gold">{ms}ms</span>
+          <span className="sep">/</span>
+          <span className="illus">illustrative sample, not live telemetry</span>
         </div>
         <h1 data-reveal data-rd="1">
           Give your AI agents<br />
@@ -166,7 +168,7 @@ function Hero() {
           Self-hosted.
         </h1>
         <p className="hero-sub" data-reveal data-rd="2">
-          Conduit is an open-source SDK that gives AI agents Lightning wallets, programmable spending controls, and machine-to-machine payments — running on <em>your own node, with your own keys.</em> Self-custody by default. Conduit never touches your funds.
+          Conduit is an open-source, self-hosted SDK that gives AI agents Lightning wallets, programmable spending controls, and machine-to-machine payments — running on <em>your own infrastructure and your own LND node.</em> There's no Conduit SaaS, Conduit never holds your funds, and nothing phones home.
         </p>
         <div className="hero-actions" data-reveal data-rd="3">
           <Magnetic strength={8}>
@@ -191,7 +193,7 @@ function Hero() {
         </div>
         <div className="stack" style={{ textAlign: 'right' }}>
           <span>NETWORK</span>
-          <span className="v">LIGHTNING · MAINNET</span>
+          <span className="v">LIGHTNING · TESTNET</span>
         </div>
       </div>
     </section>
@@ -223,7 +225,7 @@ function StatStrip() {
           </div>
         ))}
       </div>
-      <div className="strip-note" data-reveal>Illustrative figures — Conduit is self-hosted and non-custodial; these numbers are example aggregates across self-run nodes, not funds held by Conduit.</div>
+      <div className="strip-note" data-reveal>Illustrative figures — sample aggregates, not live metrics. Conduit is self-hosted: every node is run by its operator on their own infrastructure, and Conduit never holds these funds.</div>
     </React.Fragment>
   );
 }
@@ -285,8 +287,8 @@ function Layer() {
   ];
   const features = [
     { n: '01', t: 'Agent Wallets',
-      b: 'Spin up non-custodial Lightning wallets in one API call, backed by your own LND node. Each agent gets its own keys, its own ledger, its own identity — and you hold every key.',
-      tg: 'Your Keys · Self-Custody' },
+      b: 'Spin up a virtual wallet for each agent in one API call, all backed by your own LND node. Every agent gets its own balance, ledger, and API key — an operator-custodied IOU you can credit, debit, freeze, or sweep at will.',
+      tg: 'Operator-Custodied · Your Node' },
     { n: '02', t: 'Spending Policies',
       b: 'Declarative budgets, allowlists, velocity limits, and counterparty rules — enforced by your Conduit deployment before any sats leave the wallet.',
       tg: 'Limits · Rules · Override' },
@@ -294,8 +296,8 @@ function Layer() {
       b: 'Sub-second, sub-cent payments routed straight through your own LND node. Your channels, your liquidity, your rules — Conduit never sits in the path of your funds.',
       tg: 'Sub-50ms · Your Node' },
     { n: '04', t: 'Bitcoin Finality',
-      b: 'Every transaction lands on the most credibly neutral monetary network in existence. No issuer, no chargebacks, no permission.',
-      tg: 'Mainnet · Final · Neutral' },
+      b: 'Every transaction settles on the most credibly neutral monetary network in existence. No issuer, no chargebacks, no permission. Running on testnet today; mainnet is supported and in progress.',
+      tg: 'Bitcoin · Final · Neutral' },
   ];
   return (
     <section className="section col" id="layer">
@@ -322,6 +324,26 @@ function Layer() {
             <div className="tag">{f.tg}</div>
           </article>
         ))}
+      </div>
+      <div className="isnt" data-reveal data-rd="1">
+        <div className="isnt-col is">
+          <div className="isnt-label">WHAT CONDUIT IS</div>
+          <ul>
+            <li>Self-hosted, open-source software you run on your own infrastructure.</li>
+            <li>A FastAPI core plus a virtual ledger over one operator-controlled LND node.</li>
+            <li>The operator's custody: you run the node, hold its keys, and control the funds.</li>
+            <li>Live on testnet and regtest today; mainnet is supported and in progress.</li>
+          </ul>
+        </div>
+        <div className="isnt-col isnt-not">
+          <div className="isnt-label">WHAT CONDUIT ISN'T</div>
+          <ul>
+            <li>Not a hosted service — there's no Conduit SaaS, and nothing phones home.</li>
+            <li>Not non-custodial at the agent layer: agent balances are operator-custodied IOUs the operator can credit, debit, freeze, or sweep.</li>
+            <li>Agents hold API keys, not Bitcoin signing keys — there is no per-agent on-chain key.</li>
+            <li>Not running on mainnet, and not externally audited.</li>
+          </ul>
+        </div>
       </div>
     </section>
   );
@@ -365,8 +387,8 @@ function rowsFromTokens(tokens) {
 function SDK() {
   const [lang, setLang] = React.useState('Python');
   const [copied, setCopied] = React.useState(false);
-  const langs = ['Python', 'TypeScript', 'Rust', 'MCP Native'];
-  // for langs other than Python, render Python sample (placeholder) — same look
+  const langs = ['Python', 'TypeScript'];
+  // TypeScript reuses the Python sample shape for now — same look
   const tokens = SDK_SAMPLES[lang] || SDK_SAMPLES['Python'];
   const lines = rowsFromTokens(tokens).slice(0, 19);
 
@@ -380,8 +402,6 @@ function SDK() {
   const filename = {
     'Python': 'autonomous_agent.py',
     'TypeScript': 'autonomous_agent.ts',
-    'Rust': 'autonomous_agent.rs',
-    'MCP Native': 'conduit_tool.json',
   }[lang];
 
   return (
@@ -444,8 +464,8 @@ function Cases() {
       p: 'Agents transact with other agents — buying data, hiring services, settling deals — directly, without intermediaries. A native economy for software.',
       demo: { l: 'MEAN TX',       v: '~ 2,400 sats · 41ms' } },
     { c: 'amber',  badge: 'AMBER · 04',  tag: '/ TREASURY',       t: 'Autonomous Treasury',
-      p: 'Each agent holds, allocates, and rebalances its own balance sheet within rules you define. Programmable cashflow without a human in the loop — and every sat stays on your node.',
-      demo: { l: 'SELF-CUSTODIED', v: 'your node · your keys' } },
+      p: 'Each agent allocates and rebalances its own virtual balance within rules you define. Programmable cashflow without a human in the loop — and every sat settles through your own node.',
+      demo: { l: 'OPERATOR-CUSTODIED', v: 'your node · your keys' } },
   ];
   return (
     <section className="section col" id="cases">
@@ -478,8 +498,8 @@ function Cases() {
 function Pricing() {
   const props = [
     { n: '01', t: 'Your node, your keys, your rules',
-      b: 'Conduit runs on your own infrastructure, against your own LND node, with your own keys. It is software tooling — it never touches your funds. Self-custody by default, fail-closed by design.',
-      tg: 'Self-Hosted · Non-Custodial' },
+      b: 'Conduit runs on your own infrastructure, against your own LND node, with your own keys. It is self-hosted software — there is no Conduit SaaS, and Conduit never holds your funds or phones home. Fail-closed by design.',
+      tg: 'Self-Hosted · Your Infra' },
     { n: '02', t: 'Usage-based pricing — pay per transaction in sats',
       b: 'No subscriptions. No fiat. No cards. A small per-transaction platform fee in satoshis is built into the payment flow and configured by whoever deploys Conduit. You only pay when value moves.',
       tg: 'Sats Only · No Subscription' },
@@ -544,8 +564,8 @@ function Security() {
     { t: 'Allowlists',
       p: 'Constrain counterparties to known wallets, nodes, or namespaces. Reject any destination outside the policy.',
       ico: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>) },
-    { t: 'Audit Logs',
-      p: 'Every signature, route, and rule decision is signed and exported. Reconstruct any agent history to the satoshi.',
+    { t: 'Append-Only Ledger',
+      p: 'Every payment is a row with a memo — reconstruct any agent history to the satoshi. Webhook deliveries are HMAC-signed.',
       ico: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 6h16M4 12h16M4 18h10"/></svg>) },
     { t: 'Scoped Keys',
       p: 'Issue narrow keys per task or session. Capability-style scopes mean a compromise never reaches the master wallet.',
@@ -564,7 +584,7 @@ function Security() {
         <h2>Give every agent a wallet,<br />a budget, and <em>rules.</em></h2>
         <p>Autonomy without limits is a liability. Your Conduit deployment evaluates every outbound payment against your declared spending rules before a signature ever happens — and gives you the kill switch if something looks wrong. Fail-closed by default.</p>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener"><span>Read the threat model</span> <span className="btn-arrow">↗</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#security" target="_blank" rel="noopener"><span>Read the security model</span> <span className="btn-arrow">↗</span></a>
         </Magnetic>
       </div>
       <div className="security-grid">
@@ -625,8 +645,8 @@ function Footer() {
       </div>
       <div className="copy">
         <div>conduit.energy</div>
-        <div className="dim">Self-hosted, self-custody Bitcoin wallets for autonomous AI agents</div>
-        <div className="dim">Your node, your keys, your rules · MIT licensed</div>
+        <div className="dim">Self-hosted Bitcoin / Lightning payment rails for autonomous AI agents</div>
+        <div className="dim">Your node, your keys, your rules · MIT licensed · testnet today, mainnet in progress</div>
         <div className="dim">© 2026 Conduit Labs</div>
       </div>
       <div className="links">

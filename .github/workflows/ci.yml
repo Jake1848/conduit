@@ -170,6 +170,23 @@ jobs:
         working-directory: dashboard
         run: npm audit --audit-level=high || true
 
+  secret-scan:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    # Blocking — a real leaked credential should fail the build. Known
+    # intentional test/placeholder values are allowlisted in .gitleaks.toml.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks scans past commits, not just the tip.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
   sdk-js:
     name: sdk-js (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

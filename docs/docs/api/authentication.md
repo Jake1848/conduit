@@ -10,8 +10,8 @@ Authorization: Bearer ck_live_xxxxxxxxxxxxxxxxxxxxx
 
 | prefix | meaning |
 | ------ | ------- |
-| `ck_live_…` | Mainnet keys — talk to real Lightning |
-| `ck_test_…` | Testnet / development keys |
+| `ck_live_…` | Mainnet-prefixed keys (mainnet support is in progress; not yet run in production) |
+| `ck_test_…` | Testnet / development keys — what Conduit runs on today |
 
 ## Scopes
 

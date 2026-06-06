@@ -6,6 +6,13 @@ LND) is for local work only. Production has a few hard requirements enforced at
 startup — if any is missing, the app refuses to boot rather than running
 insecurely.
 
+!!! warning "Network status"
+    Conduit runs **live on testnet** (testnet/regtest is what's been exercised).
+    `CONDUIT_NETWORK=mainnet` is a supported setting and the software is built
+    for it, but a mainnet deployment has **not yet been run in production** and
+    there is no external security audit yet. Bring it up on testnet first and
+    treat your first mainnet run as new territory.
+
 ## Required env vars
 
 | var | purpose |
@@ -100,8 +107,8 @@ per-invoice errors are logged but never crash the loop.
 
 ## Security checklist
 
-Conduit never holds your funds — these steps keep the node and keys **you** own
-under your control.
+There is no Conduit SaaS holding your funds — these steps keep the node and keys
+**you** own under your control.
 
 - [ ] **Your** LND seed phrase stored on paper, off the VPS
 - [ ] LND gRPC (`10009`) and REST (`8080`) **never** exposed by UFW

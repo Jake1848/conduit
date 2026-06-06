@@ -1,19 +1,24 @@
 # Conduit
 
-**Self-hosted, non-custodial Bitcoin payment infrastructure for autonomous AI agents.**
+**Self-hosted Bitcoin Lightning payment infrastructure for autonomous AI agents.**
 
 Conduit is software tooling you run on **your own** infrastructure, in front of
-**your own** LND node, signed by **your own** keys. It gives any AI agent a
+**your own** LND node, with **your own** keys. It gives any AI agent a virtual
 Lightning wallet, a spending policy, and an API to send, receive, and account
 for Bitcoin payments — programmatically, with hard guardrails the agent cannot
 override.
 
-Conduit **never touches your funds**. There is no Conduit-operated wallet, no
-hosted custody, no third party in the payment path. Your node, your keys, your
-rules.
+There is no Conduit SaaS: you host it, Conduit never holds your funds and never
+phones home. At the operator level it's self-hosted — your node, your keys, your
+rules. The agents you create are **virtual sub-balances** in a ledger that you,
+the operator, control: they hold a scoped API key, not a signing key, and you
+can credit, debit, or sweep them at any time.
+
+Status: **v0.8.0 — running live on testnet** (testnet/regtest today; mainnet
+support is in progress, not yet exercised in production).
 
 - Website: https://conduit.energy
-- Hosted demo API: https://api.conduit.energy
+- Hosted demo API: https://api.conduit.energy (testnet)
 - Docs: https://docs.conduit.energy
 
 ---
@@ -28,7 +33,9 @@ sits in front of LND as a policy + accounting layer:
 - **You** are the operator. The bootstrap API key is **your** master key to
   **your own** system — it mints the scoped keys you hand to your agents.
 - **You** credit and debit the virtual sub-balances of the agents running on
-  **your** node. Conduit tracks the ledger; the sats stay in your channels.
+  **your** node — Conduit is custodial *for the agents by construction*: the
+  agent balances are operator-controlled IOUs in Conduit's ledger, and the
+  underlying sats stay in your channels under your keys.
 - **You** set a per-transaction **platform fee** (in sats) that Conduit adds on
   top of each payment and keeps on settlement — that fee is **your** revenue,
   configured by you, never a Conduit cut.
@@ -94,13 +101,16 @@ bootstrap key `ck_test_dev_root` (your master key in dev), and SQLite at
 `/app/data/conduit.db`. No real Bitcoin moves until you point Conduit at a real
 LND node of your own.
 
-## Going to production
+## Running against a real node
 
-Production runs against **your own** Lightning infrastructure. The order of
-operations:
+Conduit is self-hostable today on **testnet** and **regtest** — that's where it
+runs live. Mainnet is a supported target the software is built for, but it has
+not yet been exercised in production; treat a mainnet bring-up as new territory
+and test on testnet first. The order of operations against your own Lightning
+infrastructure:
 
 1. Install Bitcoin Core (pruned) on your host — `infra/scripts/install_bitcoind.sh`
-2. Install LND (mainnet + testnet) — `infra/scripts/install_lnd.sh`
+2. Install LND (testnet today; mainnet supported) — `infra/scripts/install_lnd.sh`
 3. Configure UFW — `infra/scripts/setup_firewall.sh`
 4. Wait for chain sync (1–3 days)
 5. Open channels — `infra/scripts/setup_channels.sh`
@@ -110,12 +120,19 @@ operations:
 
 Full runbook: `infra/README.md`.
 
-## Self-custody & trust model
+## Self-hosted trust model
 
-Conduit is **non-custodial by construction** — it is software you operate, not
-a service that holds your money:
+Conduit is **self-hosted by construction** — it is software you operate, not a
+service that holds your money. Be clear about who custodies what:
 
-- The LND seed phrase is **yours** and is **never** stored on the VPS by Conduit
+- **At the operator level you are self-hosted.** There is no Conduit SaaS;
+  Conduit never holds your funds and never phones home. The LND seed phrase is
+  **yours** and is **never** stored on the VPS by Conduit; the sats stay in
+  channels under your keys.
+- **At the agent level Conduit is custodial.** Agent balances are virtual
+  IOUs in Conduit's ledger that you, the operator, credit, debit, and can
+  sweep. Agents hold a scoped API key, not a signing key — they never touch a
+  Bitcoin private key.
 - LND gRPC / REST is **never** exposed publicly — only your Conduit API is
 - The Conduit policy engine evaluates every payment **before** it reaches your
   LND and **fails closed** on any error
@@ -123,8 +140,8 @@ a service that holds your money:
 - The bootstrap API key is your master key — guard it like the macaroon
 - All transit is HTTPS; webhook deliveries are HMAC-signed
 
-Conduit is just the policy + accounting layer in front of a node you control. If
-you turn Conduit off, your sats are still in your channels.
+Conduit is the policy + accounting layer in front of a node you control. If you
+turn Conduit off, your sats are still in your channels.
 
 See `infra/README.md` → "Security checklist".
 

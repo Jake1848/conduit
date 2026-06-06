@@ -1,11 +1,27 @@
 # Changelog
 
+## 0.8.0 — accurate trust-model and network framing
+
+- **Self-hosted framing, custody clarified.** Conduit is **self-hosted**: you
+  run it on your own infra in front of your own LND node, with no Conduit SaaS,
+  and it never holds your funds or phones home. The docs and README now state
+  the custody model precisely — the **operator** is self-hosted (your node, your
+  keys, your channels), while at the **agent** layer Conduit is custodial by
+  construction: agent balances are operator-controlled virtual IOUs, and agents
+  hold a scoped API key, not a signing key. Earlier "non-custodial" wording is
+  removed. No behavioral change; this corrects the description.
+- **Network status made explicit.** Conduit runs **live on testnet**
+  (testnet/regtest). Mainnet is a supported target the software is built for but
+  has not yet been exercised in production, and there is no external security
+  audit yet. Docs now say so wherever mainnet is mentioned.
+
 ## 0.7.0 — Self-hosted platform fee (operator revenue)
 
-- **Self-hosted, non-custodial framing.** Conduit is software **you** run in
-  front of **your own** LND node — it never holds funds. The docs and README now
-  describe the self-hosted trust model throughout (your node, your keys, your
-  rules). No behavioral change; this clarifies how Conduit already works.
+- **Self-hosted framing.** Conduit is software **you** run in front of **your
+  own** LND node. The docs and README describe the self-hosted trust model
+  throughout (your node, your keys, your rules). No behavioral change; this
+  clarifies how Conduit already works. (See 0.8.0 for the corrected custody
+  wording.)
 - **Per-transaction platform fee** — a usage-based fee in sats, configured by the
   operator via `PLATFORM_FEE_PERCENT` (default `0.5` = 0.5%),
   `PLATFORM_FEE_MIN_SATS` (default `1`), and `PLATFORM_FEE_MAX_SATS` (default
