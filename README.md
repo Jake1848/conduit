@@ -14,7 +14,7 @@ rules. The agents you create are **virtual sub-balances** in a ledger that you,
 the operator, control: they hold a scoped API key, not a signing key, and you
 can credit, debit, or sweep them at any time.
 
-Status: **v0.8.0 — running live on testnet** (testnet/regtest today; mainnet
+Status: **v0.8.1 — running live on testnet** (testnet/regtest today; mainnet
 support is in progress, not yet exercised in production).
 
 - Website: https://conduit.energy

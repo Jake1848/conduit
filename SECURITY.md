@@ -6,7 +6,7 @@ Conduit never holds your funds or phones home. Because real money can move throu
 production deployment, we take security reports seriously and ask that you disclose
 them responsibly.
 
-> Conduit is currently **v0.8.0 — testnet-ready, mainnet in progress**. It has run
+> Conduit is currently **v0.8.1 — testnet-ready, mainnet in progress**. It has run
 > live on testnet and regtest only. There has been no external security audit. Treat
 > the software accordingly.
 

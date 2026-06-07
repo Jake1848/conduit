@@ -66,5 +66,10 @@ design_handoff_conduit_console/
 core/data/
 .thumbnail
 
+# Internal legal/compliance planning brief — NOT for the public repo. This is a
+# candid self-assessment of regulatory exposure meant to be taken to counsel; a
+# public copy could be quoted against the operator. Keep it local-only.
+LEGAL_COMPLIANCE_BRIEF.md
+
 # Local reference material — exclude large external books/papers
 Mastering_the_Lightning_Network.pdf
