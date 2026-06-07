@@ -249,9 +249,16 @@ async def _execute_payment(
     except PaymentFailed as e:
         # ----- Phase 3a: definite failure → refund the full debit -----
         try:
+            # populate_existing=True: force-refresh the locked row (see the long
+            # note in Phase 3b). Without it, expire_on_commit=False means this
+            # re-SELECT returns the stale identity-map agent and the refund
+            # `+= debit_total` clobbers concurrent updates (lost-update race).
             refund_agent = (
                 await session.execute(
-                    select(Agent).where(Agent.id == agent_id).with_for_update()
+                    select(Agent)
+                    .where(Agent.id == agent_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one()
             failed_tx = await session.get(Transaction, tx_id_local)
@@ -319,9 +326,20 @@ async def _execute_payment(
     actual_fee = max(0, int(result.fee_sats))
     fee_refund = max(0, fee_budget - actual_fee)
     try:
+        # populate_existing=True is LOAD-BEARING for concurrency correctness.
+        # The session is expire_on_commit=False, so after the Phase-1 debit+commit
+        # this same `agent` object stays in the identity map holding the stale
+        # in-memory balance. A plain re-SELECT (even FOR UPDATE) would return that
+        # cached object WITHOUT re-reading the row, so `+= fee_refund` would compute
+        # off the stale value and the commit would clobber any concurrent payment's
+        # update to the same agent (a lost-update race; balances drift under load).
+        # populate_existing forces the locked row's CURRENT value into the object.
         settle_agent = (
             await session.execute(
-                select(Agent).where(Agent.id == agent_id).with_for_update()
+                select(Agent)
+                .where(Agent.id == agent_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         ).scalar_one()
         settled_tx = await session.get(Transaction, tx_id_local)

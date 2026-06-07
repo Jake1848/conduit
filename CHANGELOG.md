@@ -1,10 +1,25 @@
 # Changelog
 
-All notable changes to Conduit are documented here. Conduit is self-hosted
-Bitcoin/Lightning payment infrastructure; the operator runs it in front of their
-own LND node. Balances are a virtual ledger backed by that node's liquidity
-(custodial at the agent layer). Status: testnet/regtest. Not audited; no mainnet
-guarantees. See `SECURITY.md` for the threat model and reporting.
+All notable changes to Conduit are documented here. Conduit is a self-hosted,
+non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
+infrastructure, in front of their own LND node, paying out their own funds.
+See `SECURITY.md` for the threat model and reporting.
+
+## [0.8.2] — Concurrency ledger fix
+
+### Fixed
+- **Lost-update race on `balance_sats` under concurrent payments to the same
+  agent.** The settle (Phase 3b) and failure-refund (Phase 3a) paths re-`SELECT
+  ... FOR UPDATE`-ed the agent but, because the session is `expire_on_commit=False`,
+  got the stale identity-map object holding the pre-concurrency balance and wrote
+  it back — clobbering other in-flight payments' updates, so the denormalized
+  balance drifted (in either direction) from the transaction ledger. Adds
+  `populate_existing=True` to both locked re-selects so the current row value is
+  read under the lock. Found by the Phase-4 real-LND stress test (distinct
+  concurrent payments to one agent); earlier concurrency tests missed it because
+  they reused one idempotency key, so only a single payment executed. Postgres
+  only (the lock is a no-op on SQLite, which is unsupported in production); covered
+  by a new `core-postgres` regression test (`test_concurrency_ledger.py`).
 
 ## [0.8.1] — Security hardening
 
