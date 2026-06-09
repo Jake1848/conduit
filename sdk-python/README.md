@@ -49,6 +49,31 @@ print(receipt.hash, receipt.settled_in_ms)
 print(receipt.fee_sats, receipt.platform_fee_sats)
 ```
 
+## Client-centric API (`ConduitClient`)
+
+Prefer a single client object with explicit methods over the `Agent`
+active-record style? `ConduitClient` wraps the same retrying, idempotent HTTP
+client and adds operator funding (`credit_agent`) — from `pip install` to a
+settled payment in a few lines:
+
+```python
+from conduit import ConduitClient
+
+client = ConduitClient(base_url="https://conduit.example.com", api_key="ck_live_...")
+
+agent = client.create_agent("compute-router-7")
+client.credit_agent(agent.id, sats=10_000)            # operator funds the agent
+
+receipt = client.send_payment(agent.id, dest_pubkey="02beef...", sats=500)
+print(receipt.status, receipt.platform_fee_sats)      # 'settled', 2
+
+print(client.get_balance(agent.id).available)         # spendable sats
+for tx in client.list_transactions(agent.id):
+    print(tx.direction, tx.amount_sats, tx.status)
+```
+
+Both styles talk to the same instance — use whichever you prefer.
+
 ## Platform fee on receipts
 
 Every payment receipt includes a **`platform_fee_sats`** field — the per-transaction

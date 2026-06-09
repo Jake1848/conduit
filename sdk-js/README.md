@@ -49,6 +49,34 @@ console.log(receipt.hash, receipt.settledInMs);
 console.log(receipt.feeSats, receipt.platformFeeSats);
 ```
 
+## Client-centric API (`ConduitClient`)
+
+Prefer a single client object with explicit methods over the `Agent`
+active-record style? `ConduitClient` wraps the same retrying, idempotent HTTP
+client and adds operator funding (`creditAgent`):
+
+```ts
+import { ConduitClient } from '@conduit-btc/sdk';
+
+const client = new ConduitClient({
+  baseUrl: 'https://conduit.example.com',
+  apiKey: 'ck_live_...',
+});
+
+const agent = await client.createAgent({ name: 'compute-router-7' });
+await client.creditAgent(agent.id, { sats: 10_000 });    // operator funds the agent
+
+const receipt = await client.sendPayment(agent.id, { destPubkey: '02beef...', sats: 500 });
+console.log(receipt.status, receipt.platformFeeSats);     // 'settled', 2
+
+console.log((await client.getBalance(agent.id)).available);
+for (const tx of await client.listTransactions(agent.id)) {
+  console.log(tx.direction, tx.amountSats, tx.status);
+}
+```
+
+Both styles talk to the same instance — use whichever you prefer.
+
 ## Platform fee on receipts
 
 Every payment receipt includes a **`platformFeeSats`** field (`platform_fee_sats`
