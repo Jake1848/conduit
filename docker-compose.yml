@@ -41,6 +41,10 @@ services:
     # (requires the GHCR package to be public, or run `docker login ghcr.io` first):
     #   image: ghcr.io/jake1848/conduit:latest
     container_name: conduit-api
+    # Apply DB migrations (alembic upgrade head) on every boot, THEN start the
+    # API. Without this the production schema is never created and the app exits
+    # with "relation api_keys does not exist". Idempotent + safe to re-run.
+    entrypoint: ["./entrypoint.sh"]
     depends_on:
       postgres:
         condition: service_healthy
