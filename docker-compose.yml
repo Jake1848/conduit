@@ -33,11 +33,13 @@ services:
     # No published port — Postgres is reachable only from inside the compose net.
 
   api:
-    image: ghcr.io/jake1848/conduit:latest
-    # Prefer the published image above. To build from source instead, comment
-    # out the `image:` line and uncomment this block:
-    # build:
-    #   context: ./core
+    # Build the Conduit API from source (./core). This needs no registry access,
+    # so a fresh `git clone` + `docker compose up -d` just works.
+    build:
+      context: ./core
+    # Alternatively, pull the pre-built image instead of building from source
+    # (requires the GHCR package to be public, or run `docker login ghcr.io` first):
+    #   image: ghcr.io/jake1848/conduit:latest
     container_name: conduit-api
     depends_on:
       postgres:
@@ -88,6 +90,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      # Grace period for first boot: build/pull + Postgres wait + `alembic upgrade`
+      # before health is enforced, so the container isn't flagged unhealthy early.
+      start_period: 60s
 
 volumes:
   pgdata:

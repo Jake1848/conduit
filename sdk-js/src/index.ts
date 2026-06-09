@@ -1,5 +1,13 @@
 export { Agent } from "./agent.js";
-export type { Receipt, Invoice, Transaction, SendOptions } from "./agent.js";
+export type {
+  Receipt,
+  Invoice,
+  Transaction,
+  SendOptions,
+  LedgerAdjustment,
+} from "./agent.js";
+export { ConduitClient } from "./conduit-client.js";
+export type { SendPaymentOptions, FundOptions } from "./conduit-client.js";
 export { Policy } from "./policy.js";
 export { Conduit, defaultClient, setDefaultClient } from "./client.js";
 export type { ConduitOptions, RequestOptions } from "./client.js";

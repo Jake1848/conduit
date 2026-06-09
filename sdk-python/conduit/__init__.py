@@ -8,8 +8,9 @@
     print(receipt.hash, receipt.settled_in_ms)
 """
 
-from .agent import Agent
+from .agent import Agent, Balance, LedgerAdjustment
 from .client import Conduit, default_client, set_default_client
+from .conduit_client import ConduitClient
 from .errors import (
     AgentNotFound,
     AuthenticationError,
@@ -32,11 +33,14 @@ from .webhook import parse_webhook, verify_webhook
 api_key: str | None = None
 base_url: str | None = None
 
-__version__ = "0.1.0"
+__version__ = "0.8.2"
 
 __all__ = [
     "Agent",
+    "ConduitClient",
     "Conduit",
+    "Balance",
+    "LedgerAdjustment",
     "default_client",
     "set_default_client",
     "Policy",

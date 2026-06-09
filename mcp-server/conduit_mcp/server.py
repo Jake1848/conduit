@@ -10,6 +10,7 @@ to the wallet — the AI cannot override it.
 
 Tools and the API-key scope each one requires (scopes are enforced server-side):
   conduit_create_wallet   — provision a new agent wallet with a daily limit   [admin]
+  conduit_credit          — fund an agent wallet from your node's liquidity    [admin]
   conduit_attach_policy   — configure spending controls on a wallet           [admin]
   conduit_balance         — check current balance                             [read]
   conduit_pay             — send a payment (Lightning address or BOLT11)       [write]
@@ -79,6 +80,23 @@ async def list_tools() -> list[types.Tool]:
                         "minimum": 1,
                         "description": "Max sats per 24h",
                     },
+                },
+            },
+        ),
+        types.Tool(
+            name="conduit_credit",
+            description=(
+                "Fund an agent wallet by crediting its virtual balance from the "
+                "operator's own node liquidity (in sats). This is how you give an "
+                "agent a spending budget before it can pay. Requires an ADMIN-scope key."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["agent", "sats"],
+                "properties": {
+                    "agent": {"type": "string", "description": "Agent name or ID"},
+                    "sats": {"type": "integer", "minimum": 1, "description": "Amount to credit"},
+                    "reason": {"type": "string", "description": "Optional ledger note"},
                 },
             },
         ),
@@ -200,6 +218,16 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
             a = Agent.create(name=args["name"], daily_limit=int(args["daily_limit"]))
             return _ok({"id": a.id, "name": a.name, "active": a.active})
 
+        if name == "conduit_credit":
+            agent = _agent_for_name_or_id(args["agent"])
+            adj = agent.credit(int(args["sats"]), reason=args.get("reason"))
+            return _ok({
+                "agent_id": adj.agent_id,
+                "transaction_id": adj.transaction_id,
+                "credited_sats": adj.delta_sats,
+                "balance_sats": adj.balance_sats,
+            })
+
         if name == "conduit_attach_policy":
             agent = _agent_for_name_or_id(args["agent"])
             agent.policy.attach(
@@ -235,6 +263,7 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
                 "hash": receipt.hash,
                 "amount_sats": receipt.amount_sats,
                 "fee_sats": receipt.fee_sats,
+                "platform_fee_sats": receipt.platform_fee_sats,
                 "settled_in_ms": receipt.settled_in_ms,
             })
 
@@ -264,6 +293,7 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
                         "direction": t.direction,
                         "amount_sats": t.amount_sats,
                         "fee_sats": t.fee_sats,
+                        "platform_fee_sats": t.platform_fee_sats,
                         "status": t.status,
                         "destination": t.destination,
                         "created_at": t.created_at.isoformat(),
@@ -301,7 +331,7 @@ async def serve_stdio() -> None:
             write,
             InitializationOptions(
                 server_name="conduit",
-                server_version="0.1.0",
+                server_version="0.8.2",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},

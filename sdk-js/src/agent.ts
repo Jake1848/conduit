@@ -11,7 +11,7 @@ import type {
 } from "./types.js";
 
 /** Generate a fresh idempotency key. Prefers Web Crypto (Node 20+ and browsers). */
-function newIdempotencyKey(): string {
+export function newIdempotencyKey(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto;
   if (c && typeof c.randomUUID === "function") return c.randomUUID();
   // Fallback for runtimes without Web Crypto (should not happen on Node >= 20).
@@ -64,7 +64,31 @@ export interface Transaction {
   createdAt: Date;
 }
 
-function fromReceipt(r: ReceiptJSON): Receipt {
+export interface LedgerAdjustment {
+  agentId: string;
+  transactionId: string;
+  /** positive = credit, negative = debit */
+  deltaSats: number;
+  balanceSats: number;
+}
+
+export interface LedgerAdjustJSON {
+  agent_id: string;
+  transaction_id: string;
+  delta_sats: number;
+  balance_sats: number;
+}
+
+export function fromLedger(d: LedgerAdjustJSON): LedgerAdjustment {
+  return {
+    agentId: d.agent_id,
+    transactionId: d.transaction_id,
+    deltaSats: d.delta_sats,
+    balanceSats: d.balance_sats,
+  };
+}
+
+export function fromReceipt(r: ReceiptJSON): Receipt {
   return {
     id: r.id,
     agentId: r.agent_id,
@@ -79,7 +103,7 @@ function fromReceipt(r: ReceiptJSON): Receipt {
     createdAt: new Date(r.created_at),
   };
 }
-function fromInvoice(i: InvoiceJSON): Invoice {
+export function fromInvoice(i: InvoiceJSON): Invoice {
   return {
     id: i.id,
     agentId: i.agent_id,
@@ -92,7 +116,7 @@ function fromInvoice(i: InvoiceJSON): Invoice {
     createdAt: new Date(i.created_at),
   };
 }
-function fromTx(t: TransactionJSON): Transaction {
+export function fromTx(t: TransactionJSON): Transaction {
   return {
     id: t.id,
     agentId: t.agent_id,
@@ -210,6 +234,32 @@ export class Agent {
       expiry: opts.expiry ?? 3600,
     });
     return fromInvoice(data);
+  }
+
+  /** Operator top-up: credit this agent's virtual balance (admin scope). */
+  async credit(
+    sats: number,
+    opts: { reason?: string; metadata?: Record<string, unknown> } = {},
+  ): Promise<LedgerAdjustment> {
+    const body: Record<string, unknown> = { sats };
+    if (opts.reason !== undefined) body.reason = opts.reason;
+    if (opts.metadata !== undefined) body.metadata = opts.metadata;
+    return fromLedger(
+      await this.client.post<LedgerAdjustJSON>(`/v1/agents/${this.id}/credit`, body),
+    );
+  }
+
+  /** Operator sweep: debit this agent's virtual balance (admin scope). */
+  async debit(
+    sats: number,
+    opts: { reason?: string; metadata?: Record<string, unknown> } = {},
+  ): Promise<LedgerAdjustment> {
+    const body: Record<string, unknown> = { sats };
+    if (opts.reason !== undefined) body.reason = opts.reason;
+    if (opts.metadata !== undefined) body.metadata = opts.metadata;
+    return fromLedger(
+      await this.client.post<LedgerAdjustJSON>(`/v1/agents/${this.id}/debit`, body),
+    );
   }
 
   async balance(): Promise<Balance> {

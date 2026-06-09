@@ -1,6 +1,6 @@
 {
   "name": "@conduit-btc/sdk",
-  "version": "0.8.0",
+  "version": "0.8.2",
   "description": "Self-hosted, non-custodial Bitcoin Lightning payments for autonomous AI agents — your node, your keys, your rules.",
   "author": "Jake Knowles",
   "license": "MIT",

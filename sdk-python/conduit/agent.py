@@ -23,6 +23,25 @@ class Balance:
     total: int
 
 
+@dataclass
+class LedgerAdjustment:
+    """Result of an operator credit/debit on an agent's virtual balance."""
+
+    agent_id: str
+    transaction_id: str
+    delta_sats: int  # positive = credit, negative = debit
+    balance_sats: int
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> "LedgerAdjustment":
+        return cls(
+            agent_id=data["agent_id"],
+            transaction_id=data["transaction_id"],
+            delta_sats=int(data["delta_sats"]),
+            balance_sats=int(data["balance_sats"]),
+        )
+
+
 class Agent:
     """An autonomous wallet with optional spending policy.
 
@@ -175,6 +194,40 @@ class Agent:
             json={"agent_id": self.id, "amount": amount, "memo": memo, "expiry": expiry},
         )
         return Invoice.from_api(data)
+
+    def credit(
+        self,
+        sats: int,
+        *,
+        reason: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "LedgerAdjustment":
+        """Operator top-up: credit this agent's virtual balance from the
+        operator's own node liquidity. Requires an admin-scope key."""
+        payload: dict[str, Any] = {"sats": sats}
+        if reason is not None:
+            payload["reason"] = reason
+        if metadata is not None:
+            payload["metadata"] = metadata
+        data = self._client.post(f"/v1/agents/{self.id}/credit", json=payload)
+        return LedgerAdjustment.from_api(data)
+
+    def debit(
+        self,
+        sats: int,
+        *,
+        reason: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "LedgerAdjustment":
+        """Operator sweep: debit this agent's virtual balance back to the
+        operator's treasury. Requires an admin-scope key."""
+        payload: dict[str, Any] = {"sats": sats}
+        if reason is not None:
+            payload["reason"] = reason
+        if metadata is not None:
+            payload["metadata"] = metadata
+        data = self._client.post(f"/v1/agents/{self.id}/debit", json=payload)
+        return LedgerAdjustment.from_api(data)
 
     @property
     def balance(self) -> Balance:
