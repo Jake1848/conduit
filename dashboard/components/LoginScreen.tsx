@@ -78,7 +78,8 @@ export function LoginScreen() {
         </button>
 
         <div className="login-hint">
-          Default API: {DEFAULT_API_BASE}
+          Point at your own instance — e.g. https://api-mainnet.conduit.energy (mainnet),
+          https://api.conduit.energy (testnet), or http://localhost:8000 (local dev).
           <br />
           regtest sandbox key: ck_test_regtest_root_key
         </div>

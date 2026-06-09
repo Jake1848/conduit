@@ -14,11 +14,12 @@ rules. The agents you create are **virtual sub-balances** in a ledger that you,
 the operator, control: they hold a scoped API key, not a signing key, and you
 can credit, debit, or sweep them at any time.
 
-Status: **v0.8.1 — running live on testnet** (testnet/regtest today; mainnet
-support is in progress, not yet exercised in production).
+Status: **v0.8.2 — running live on testnet and mainnet** (testnet/regtest plus
+a live mainnet node; the first real mainnet payment has settled end-to-end —
+still early and small, not production-at-scale).
 
 - Website: https://conduit.energy
-- Hosted demo API: https://api.conduit.energy (testnet)
+- Hosted demo API: https://api.conduit.energy (testnet) · https://api-mainnet.conduit.energy (mainnet)
 - Docs: https://docs.conduit.energy
 
 ---
@@ -103,10 +104,11 @@ LND node of your own.
 
 ## Running against a real node
 
-Conduit is self-hostable today on **testnet** and **regtest** — that's where it
-runs live. Mainnet is a supported target the software is built for, but it has
-not yet been exercised in production; treat a mainnet bring-up as new territory
-and test on testnet first. The order of operations against your own Lightning
+Conduit is self-hostable today on **testnet**, **regtest**, and **mainnet** —
+all three run live. Mainnet is now real: a neutrino LND node with a real channel
+is up and the first real-money payment has settled end-to-end. It is still
+early and small, so treat a mainnet bring-up as new territory and test on
+testnet first. The order of operations against your own Lightning
 infrastructure:
 
 1. Install Bitcoin Core (pruned) on your host — `infra/scripts/install_bitcoind.sh`
@@ -117,6 +119,17 @@ infrastructure:
 6. Point the Core API at **your** LND macaroon and TLS cert (`LND_MOCK=false`)
 7. Set your `PLATFORM_FEE_*` values to whatever revenue you want to charge
 8. Deploy with `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
+
+### Mainnet (live)
+
+Mainnet is live but early and small. The deployment today is a single neutrino
+LND node with one ~20k-sat channel. The first real-money payment has settled
+end-to-end: 2000 sats sent via Lightning keysend, a 10-sat platform fee (0.5%)
+collected, 1-sat routing fee, settled in ~15s — with the full lifecycle
+verified (debit → route → settle → platform-fee capture → refund-on-failure →
+exact ledger reconciliation). This is a first real-money validation, **not**
+production-at-scale; do not assume throughput or battle-testing. The live
+mainnet API is at https://api-mainnet.conduit.energy.
 
 Full runbook: `infra/README.md`.
 
