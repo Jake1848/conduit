@@ -28,6 +28,7 @@ from .routes import (
     policies,
     system,
     transactions,
+    treasury,
     webhooks,
 )
 from .services import webhook_sender
@@ -233,6 +234,7 @@ app.include_router(transactions.router)
 app.include_router(webhooks.router)
 app.include_router(metrics.router)
 app.include_router(fees.router)
+app.include_router(treasury.router)
 
 # Prometheus exposition — ROOT path, unauthenticated (an ops endpoint scraped by
 # the monitoring stack, not a user API). Distinct from the dashboard-facing JSON

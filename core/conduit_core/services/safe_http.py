@@ -144,6 +144,28 @@ def assert_safe_url(url: str) -> None:
     _resolve_and_validate(host, parts.port or 443)
 
 
+def assert_safe_url_shallow(url: str) -> None:
+    """Cheap, DNS-free validation for STORE time (e.g. registering a webhook).
+
+    Enforces https and rejects a literal private/loopback/metadata IP host, but
+    does NOT resolve hostnames — so registering a perfectly valid https endpoint
+    never fails just because DNS is momentarily unavailable. The authoritative,
+    DNS-rebind-safe resolve+pin still happens at delivery time via safe_post.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        raise InvalidInput(f"Refusing non-https URL: {url!r}")
+    host = parts.hostname
+    if not host:
+        raise InvalidInput(f"URL has no host: {url!r}")
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        return  # hostname — defer resolution/validation to delivery
+    if _is_unsafe_ip(literal):
+        raise InvalidInput(f"Refusing URL pointing at non-public address {host!r}")
+
+
 class _PinnedTransport(httpx.AsyncHTTPTransport):
     """An httpx transport that resolves+validates the hostname and pins the
     connection to a single validated IP, closing the DNS-rebinding window.

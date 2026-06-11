@@ -5,19 +5,21 @@ request runs normally; subsequent requests with the same key return the
 cached response WITHOUT re-executing — even if the cached response was a
 4xx/5xx. This is what kills the network-blip-double-charge vector.
 
-Scoping: the key is namespaced to the API key that sent it, so two
-different agents can each use "abc123" without colliding.
+Scoping: the key is OPERATOR-WIDE — unique on `key` alone, across every API
+key the operator holds. A retry that goes out under a different key (key
+rotation, a second worker) still dedupes against the original instead of
+double-charging. `api_key_id` is recorded for audit but is not part of scope.
 
 Conflict handling: if the same key is reused with a DIFFERENT request
 body, we refuse with 409. We never return a cached response for a request
 that doesn't match what was originally cached — that would be a worse bug.
 
 Concurrency (v2 — reservation): we RESERVE the key by inserting a `pending`
-record (response_status == 0 sentinel) BEFORE executing. The (api_key_id, key)
-unique constraint is enforced by Postgres across ALL workers/processes, so a
-second truly-concurrent request loses the insert race and is told the key is
-already in flight (409) instead of executing a second payment. The winner runs
-the payment and then UPDATEs the reservation with the real response. Sequential
+record (response_status == 0 sentinel) BEFORE executing. The unique `key`
+constraint is enforced by Postgres across ALL workers/processes, so a second
+truly-concurrent request loses the insert race and is told the key is already
+in flight (409) instead of executing a second payment. The winner runs the
+payment and then UPDATEs the reservation with the real response. Sequential
 retries (network blip → SDK backs off → retries) still get the cached response.
 """
 
@@ -87,7 +89,7 @@ def _decode(rec: IdempotencyRecord) -> CachedResponse | None:
 async def reserve(
     api_key_id_value: str, key: str, request_hash: str
 ) -> ReserveOutcome:
-    """Atomically claim (api_key_id, key) before executing the payment.
+    """Atomically claim `key` (operator-wide) before executing the payment.
 
     Uses its OWN short-lived session (durable, independent of the route session
     which a failed payment may roll back). Returns:
@@ -115,14 +117,11 @@ async def reserve(
         except IntegrityError:
             await fresh.rollback()
 
-    # Someone already holds (api_key_id, key) — inspect it.
+    # Someone already holds `key` (any of the operator's API keys) — inspect it.
     async with SessionLocal() as fresh:
         rec = (
             await fresh.execute(
-                select(IdempotencyRecord).where(
-                    IdempotencyRecord.api_key_id == api_key_id_value,
-                    IdempotencyRecord.key == key,
-                )
+                select(IdempotencyRecord).where(IdempotencyRecord.key == key)
             )
         ).scalar_one_or_none()
         if rec is None:
@@ -158,10 +157,7 @@ async def finalize(
     async with SessionLocal() as fresh:
         rec = (
             await fresh.execute(
-                select(IdempotencyRecord).where(
-                    IdempotencyRecord.api_key_id == api_key_id_value,
-                    IdempotencyRecord.key == key,
-                )
+                select(IdempotencyRecord).where(IdempotencyRecord.key == key)
             )
         ).scalar_one_or_none()
         if rec is None:

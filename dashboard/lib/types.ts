@@ -50,6 +50,50 @@ export interface Fees {
   fees_by_day: FeeDay[]; // most-recent-first
 }
 
+// ---- /v1/treasury (owner/admin: revenue + on-chain withdrawal) ----
+export interface WithdrawalItem {
+  id: string;
+  amount_sats: number;
+  address: string;
+  status: string; // pending | broadcast | failed
+  txid: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface TreasuryOverview {
+  // Revenue — accounting figure (Σ settled platform fees), commingled with node
+  // liquidity, NOT a segregated wallet.
+  revenue_total_sats: number;
+  revenue_total_btc: number;
+  revenue_today_sats: number;
+  revenue_by_day: FeeDay[]; // most-recent-first
+  // Node liquidity (assets backing agent balances).
+  onchain_confirmed_sats: number;
+  channel_local_sats: number;
+  assets_sats: number;
+  // Liabilities + resulting solvency.
+  agent_liabilities_sats: number;
+  solvent: boolean;
+  solvency_ratio: number | null;
+  // Max sats withdrawable on-chain now without breaching solvency.
+  withdrawable_sats: number;
+  fee_reserve_sats: number;
+  recent_withdrawals: WithdrawalItem[];
+  error: string | null;
+}
+
+export interface WithdrawResult {
+  withdrawal_id: string;
+  txid: string;
+  amount_sats: number;
+  address: string;
+  status: string;
+  assets_sats: number | null;
+  agent_liabilities_sats: number | null;
+  withdrawable_sats_remaining: number | null;
+}
+
 export interface Balance {
   agent_id: string;
   available_sats: number;

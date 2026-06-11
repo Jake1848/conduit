@@ -139,8 +139,54 @@ class Webhook(Base):
     )
 
 
+class TreasuryWithdrawal(Base):
+    """Durable record of an operator on-chain withdrawal of accrued funds.
+
+    Written `pending` BEFORE the irreversible broadcast and updated to
+    `broadcast` (+txid) after, so a crash in the broadcast window leaves a
+    visible, reconcilable record (no silently-spent funds). Also the operator's
+    BTC-transfer history.
+    """
+
+    __tablename__ = "treasury_withdrawals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    amount_sats: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    address: Mapped[str] = mapped_column(String(120), nullable=False)
+    sat_per_vbyte: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fee_reserve_sats: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # pending → broadcast | failed
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    txid: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # Idempotency-Key, if the caller supplied one. The withdrawals table IS the
+    # idempotency store for this endpoint (a broadcast row dedupes a retry; a
+    # failed/absent row is safe to re-attempt — nothing was sent). NULLs are
+    # distinct in the unique index, so keyless withdrawals don't collide.
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Solvency snapshot captured right after broadcast (operator audit).
+    assets_sats_after: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    liabilities_sats_after: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_twd_created_at", "created_at"),
+        Index("ix_twd_idem_key", "idempotency_key", unique=True),
+    )
+
+
 class IdempotencyRecord(Base):
-    """Caches POST responses keyed by (api_key_id, Idempotency-Key).
+    """Caches POST responses keyed by the Idempotency-Key (operator-wide).
+
+    The key dedupes across EVERY API key the operator holds — a retry that goes
+    out under a different key (rotation, a second worker process) still dedupes
+    instead of double-charging. `api_key_id` is retained as an audit column (which
+    key first claimed the key), but it is NOT part of the uniqueness scope.
 
     SECURITY: the same key reused with a different request body is rejected
     with 409 — we never silently return a cached response for a different
@@ -167,9 +213,11 @@ class IdempotencyRecord(Base):
     )
 
     __table_args__ = (
-        # Unique per (api_key_id, key) — a key is scoped to the API key that
-        # issued it, so two different agents can use the same human-chosen value.
-        Index("ix_idem_key_unique", "api_key_id", "key", unique=True),
+        # Unique per `key` alone — operator-wide idempotency. The same key sent
+        # under any of the operator's API keys hits this one row, so a cross-key
+        # retry dedupes instead of double-charging. (request_hash still rejects a
+        # key reused with a different body — see reserve(); 409.)
+        Index("ix_idem_key_unique", "key", unique=True),
         # Supports the retention prune (DELETE ... WHERE created_at < cutoff).
         Index("ix_idem_created_at", "created_at"),
     )

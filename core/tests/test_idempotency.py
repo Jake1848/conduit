@@ -126,43 +126,52 @@ async def test_no_idempotency_header_means_fresh_each_time(client):
 
 
 @pytest.mark.asyncio
-async def test_idempotency_is_scoped_to_api_key(client):
-    """Two different API keys using the same Idempotency-Key value do not
-    collide — each gets its own cache entry."""
-    # Mint a second write key.
+async def test_idempotency_is_operator_wide(client):
+    """An Idempotency-Key dedupes ACROSS the operator's API keys: the same
+    key + same body retried under a DIFFERENT key returns the cached response
+    (no double-charge). The same key + a DIFFERENT body still 409s."""
+    # Mint a second write key (same operator).
     r = await client.post(
         "/v1/api-keys", json={"scope": "write", "label": "second"}
     )
     assert r.status_code == 201
     second_key = r.json()["secret"]
 
-    r = await client.post("/v1/agents", json={"name": "alice-idem"})
-    alice = r.json()["id"]
-    await _credit(client, alice, 10_000)
-    r = await client.post("/v1/agents", json={"name": "bob-idem"})
-    bob = r.json()["id"]
-    await _credit(client, bob, 10_000)
+    r = await client.post("/v1/agents", json={"name": "op-wide-idem"})
+    agent_id = r.json()["id"]
+    await _credit(client, agent_id, 10_000)
 
+    payload = {"agent_id": agent_id, "dest_pubkey": "02" + "11" * 32, "sats": 50}
     same_key = {"Idempotency-Key": "shared-value"}
 
-    # Alice's request via the bootstrap key.
-    r1 = await client.post(
-        "/v1/payments/send",
-        json={"agent_id": alice, "dest_pubkey": "02" + "11" * 32, "sats": 50},
-        headers=same_key,
-    )
-    assert r1.status_code == 201
+    # First send via the bootstrap key.
+    r1 = await client.post("/v1/payments/send", json=payload, headers=same_key)
+    assert r1.status_code == 201, r1.text
 
-    # Bob's request via the second key — same Idempotency-Key value, different
-    # API key. Must NOT return Alice's response.
+    # SAME body, SAME idempotency key, but a DIFFERENT API key (rotation / second
+    # worker). Operator-wide scope -> cached response, NOT a second payment.
     r2 = await client.post(
         "/v1/payments/send",
-        json={"agent_id": bob, "dest_pubkey": "02" + "22" * 32, "sats": 75},
+        json=payload,
         headers={**same_key, "Authorization": f"Bearer {second_key}"},
     )
-    assert r2.status_code == 201
-    assert r2.json()["amount_sats"] == 75
-    assert r2.json()["id"] != r1.json()["id"]
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["id"] == r1.json()["id"]  # cached -> no double-charge
+
+    # Exactly one settled send exists across the whole operator.
+    txns = (
+        await client.get(f"/v1/agents/{agent_id}/transactions?direction=send")
+    ).json()["data"]
+    assert len([t for t in txns if t["status"] == "settled"]) == 1
+
+    # Same key + a DIFFERENT body via the second key -> 409 (body-hash mismatch).
+    r3 = await client.post(
+        "/v1/payments/send",
+        json={**payload, "sats": 75},
+        headers={**same_key, "Authorization": f"Bearer {second_key}"},
+    )
+    assert r3.status_code == 409, r3.text
+    assert r3.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
 
 
 @pytest.mark.asyncio

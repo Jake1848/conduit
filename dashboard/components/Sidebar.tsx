@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   KeyRound,
+  Landmark,
   LayoutGrid,
   LogOut,
   ScrollText,
@@ -39,6 +40,7 @@ export function Sidebar() {
   const workspace: NavItem[] = [
     { id: "overview", label: "Overview", href: "/", icon: LayoutGrid },
     { id: "wallets", label: "Wallets", href: "/wallets", icon: Wallet, badge: agentCount },
+    { id: "treasury", label: "Treasury", href: "/treasury", icon: Landmark, adminOnly: true },
     { id: "policies", label: "Policies", href: "/policies", icon: ShieldCheck },
     { id: "network", label: "Network", href: "/network", icon: Share2 },
     { id: "audit", label: "Audit Log", href: "/audit", icon: ScrollText },

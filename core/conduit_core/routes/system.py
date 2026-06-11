@@ -75,7 +75,10 @@ async def ready(response: Response) -> ReadyOut:
 
 
 @router.get("/status", response_model=StatusOut)
-async def status(_=Depends(require_scope("read"))) -> StatusOut:
+async def status(_=Depends(require_scope("admin"))) -> StatusOut:
+    # Operator-only: exposes node identity + on-chain/channel liquidity, which is
+    # the same operator-sensitive data the /metrics endpoint is edge-blocked for.
+    # A read-scoped data-plane key must not see node liquidity.
     s = get_settings()
     lnd = get_lnd()
     info = await lnd.get_info()

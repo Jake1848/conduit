@@ -1,11 +1,28 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 Direction = Literal["send", "receive"]
 TxStatus = Literal["pending", "settled", "failed"]
 Scope = Literal["read", "write", "admin"]
+
+# Total bitcoin supply in sats (21M BTC). A sane upper bound for any sats field —
+# rejects bigint-overflow inputs (which would otherwise 500 in Postgres) with a
+# clean 422 instead.
+MAX_SATS = 2_100_000_000_000_000
+
+
+def _no_null_bytes(v: str) -> str:
+    # Postgres text columns reject NUL (0x00); validate here so the API returns a
+    # clean 422 instead of a 500 from asyncpg on insert.
+    if "\x00" in v:
+        raise ValueError("must not contain null bytes")
+    return v
+
+
+# A `str` that additionally rejects embedded null bytes.
+SafeStr = Annotated[str, AfterValidator(_no_null_bytes)]
 
 
 class ORM(BaseModel):
@@ -15,8 +32,10 @@ class ORM(BaseModel):
 # ---------- Agents ----------
 
 class AgentCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=120)
-    daily_limit: int | None = Field(None, ge=1, description="Convenience: sets policy.max_per_day")
+    name: SafeStr = Field(..., min_length=1, max_length=120)
+    daily_limit: int | None = Field(
+        None, ge=1, le=MAX_SATS, description="Convenience: sets policy.max_per_day"
+    )
     metadata: dict[str, Any] | None = None
 
 
@@ -33,6 +52,10 @@ class AgentOut(ORM):
 
 class AgentListOut(BaseModel):
     data: list[AgentOut]
+    # True when the page filled the limit — there may be more agents to fetch
+    # (offset += limit). Lets a client page the whole fleet instead of silently
+    # truncating at the default page size.
+    has_more: bool = False
 
 
 class BalanceOut(BaseModel):
@@ -43,8 +66,8 @@ class BalanceOut(BaseModel):
 
 
 class LedgerAdjustIn(BaseModel):
-    sats: int = Field(..., ge=1, description="Amount to credit (or debit) in sats")
-    reason: str = Field("", max_length=200)
+    sats: int = Field(..., ge=1, le=MAX_SATS, description="Amount to credit (or debit) in sats")
+    reason: SafeStr = Field("", max_length=200)
     metadata: dict[str, Any] | None = None
 
 
@@ -58,9 +81,9 @@ class LedgerAdjustOut(BaseModel):
 # ---------- Policies ----------
 
 class PolicyIn(BaseModel):
-    max_per_transaction: int | None = Field(None, ge=1)
-    max_per_hour: int | None = Field(None, ge=1)
-    max_per_day: int | None = Field(None, ge=1)
+    max_per_transaction: int | None = Field(None, ge=1, le=MAX_SATS)
+    max_per_hour: int | None = Field(None, ge=1, le=MAX_SATS)
+    max_per_day: int | None = Field(None, ge=1, le=MAX_SATS)
     max_per_minute_count: int | None = Field(60, ge=1, le=10_000)
     allowlist: list[str] | None = None
     blocklist: list[str] | None = None
@@ -90,8 +113,10 @@ class PaymentSendIn(BaseModel):
     agent_id: str
     payment_request: str | None = Field(None, description="BOLT11 invoice string")
     dest_pubkey: str | None = Field(None, description="For keysend")
-    sats: int | None = Field(None, ge=1, description="Required for keysend or zero-amount invoices")
-    memo: str | None = None
+    sats: int | None = Field(
+        None, ge=1, le=MAX_SATS, description="Required for keysend or zero-amount invoices"
+    )
+    memo: SafeStr | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -99,8 +124,8 @@ class PaymentPayIn(BaseModel):
     """Pay a Conduit/Lightning Address: name@host or ln address."""
     agent_id: str
     to: str = Field(..., description="Lightning address (name@host) or BOLT11 invoice")
-    sats: int = Field(..., ge=1)
-    memo: str | None = None
+    sats: int = Field(..., ge=1, le=MAX_SATS)
+    memo: SafeStr | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -120,8 +145,8 @@ class ReceiptOut(BaseModel):
 
 class InvoiceCreateIn(BaseModel):
     agent_id: str
-    amount: int = Field(..., ge=1, description="Sats")
-    memo: str | None = None
+    amount: int = Field(..., ge=1, le=MAX_SATS, description="Sats")
+    memo: SafeStr | None = None
     expiry: int = Field(3600, ge=60, le=7 * 24 * 3600)
 
 
@@ -212,7 +237,7 @@ class ReadyOut(BaseModel):
 
 class APIKeyCreateIn(BaseModel):
     scope: Scope = "read"
-    label: str = ""
+    label: SafeStr = Field("", max_length=120)
 
 
 class APIKeyOut(BaseModel):
@@ -290,3 +315,75 @@ class FeesOut(BaseModel):
     total_collected_btc: float
     today_sats: int
     fees_by_day: list[FeeDayBucket]  # most recent first
+
+
+# ---------- Treasury (owner/admin) ----------
+
+class WithdrawalItem(ORM):
+    """One on-chain withdrawal of accrued funds (BTC-transfer history)."""
+
+    id: str
+    amount_sats: int
+    address: str
+    status: str  # pending | broadcast | failed
+    txid: str | None = None
+    error: str | None = None
+    created_at: datetime
+
+
+class TreasuryOverviewOut(BaseModel):
+    """Owner view: accrued revenue + node liquidity + solvency + how much of the
+    on-chain balance can be withdrawn without breaching solvency."""
+
+    # Revenue — accounting figure (Σ settled platform_fee_sats), NOT a segregated
+    # wallet. The sats live in the operator's own node, commingled with liquidity.
+    revenue_total_sats: int
+    revenue_total_btc: float
+    revenue_today_sats: int
+    revenue_by_day: list[FeeDayBucket]
+
+    # Node liquidity (assets backing agent balances).
+    onchain_confirmed_sats: int
+    channel_local_sats: int
+    assets_sats: int
+
+    # Liabilities the assets must cover, and the resulting solvency.
+    agent_liabilities_sats: int
+    solvent: bool
+    solvency_ratio: float | None
+
+    # Max sats withdrawable on-chain right now without dropping assets below
+    # liabilities (bounded by the on-chain confirmed balance minus a fee reserve).
+    # Assumes the DEFAULT fee rate; a higher sat_per_vbyte enlarges the reserve, so
+    # the actual withdraw guard may allow slightly less. fee_reserve_sats is the
+    # default-rate reserve this figure used.
+    withdrawable_sats: int
+    fee_reserve_sats: int
+    # Most-recent on-chain withdrawals (BTC-transfer history).
+    recent_withdrawals: list[WithdrawalItem] = []
+    # Set if the LND balance couldn't be read (figures are partial / conservative).
+    error: str | None = None
+
+
+class WithdrawIn(BaseModel):
+    amount_sats: int = Field(..., ge=1, le=MAX_SATS, description="On-chain amount to send")
+    address: SafeStr = Field(
+        ..., min_length=10, max_length=120, description="Destination on-chain address"
+    )
+    sat_per_vbyte: int | None = Field(
+        None, ge=1, le=10_000, description="Optional fee rate; LND estimates if omitted"
+    )
+
+
+class WithdrawOut(BaseModel):
+    withdrawal_id: str
+    txid: str
+    amount_sats: int
+    address: str
+    status: str
+    # Solvency AFTER the withdrawal (recomputed for the operator's confirmation).
+    # None if LND was unreadable right after the broadcast — the send still
+    # succeeded (txid is set); these are display-only.
+    assets_sats: int | None = None
+    agent_liabilities_sats: int | None = None
+    withdrawable_sats_remaining: int | None = None

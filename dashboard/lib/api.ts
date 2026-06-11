@@ -15,7 +15,9 @@ import type {
   Policy,
   Scope,
   Transaction,
+  TreasuryOverview,
   Webhook,
+  WithdrawResult,
 } from "./types";
 
 function normalizeUrl(url: string): string {
@@ -96,6 +98,9 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
       signal: opts.signal,
     });
   } catch (e) {
+    // Preserve cancellation so callers can distinguish an aborted request
+    // (e.g. a component unmount mid-pagination) from a real network failure.
+    if ((e as Error)?.name === "AbortError") throw e;
     throw new ApiError(0, "NETWORK", `Cannot reach the Conduit API at ${base}. ${(e as Error).message}`);
   }
 
@@ -138,8 +143,25 @@ export const api = {
   health: () => request<Health>("/v1/health"),
 
   // ---- agents ----
-  listAgents: (signal?: AbortSignal) =>
-    request<{ data: Agent[] }>("/v1/agents", { signal }).then((r) => r.data),
+  // The API paginates /v1/agents (default 50, max 500). Page through with
+  // has_more so the console always sees the WHOLE fleet (treasury totals,
+  // active counts, audit name resolution all depend on the full list).
+  listAgents: async (signal?: AbortSignal): Promise<Agent[]> => {
+    const all: Agent[] = [];
+    const limit = 500;
+    let offset = 0;
+    // Safety cap (100k agents) so a misbehaving has_more can't loop forever.
+    for (let page = 0; page < 200; page++) {
+      const r = await request<{ data: Agent[]; has_more?: boolean }>(
+        `/v1/agents?limit=${limit}&offset=${offset}`,
+        { signal },
+      );
+      all.push(...r.data);
+      if (!r.has_more || r.data.length === 0) break;
+      offset += limit;
+    }
+    return all;
+  },
   getAgent: (id: string, signal?: AbortSignal) => request<Agent>(`/v1/agents/${id}`, { signal }),
   getBalance: (id: string, signal?: AbortSignal) =>
     request<Balance>(`/v1/agents/${id}/balance`, { signal }),
@@ -160,6 +182,23 @@ export const api = {
 
   // ---- platform-fee revenue (admin-scope key required) ----
   getFees: (signal?: AbortSignal) => request<Fees>("/v1/fees", { signal }),
+
+  // ---- treasury: revenue + node liquidity + solvency + on-chain withdrawal (admin) ----
+  getTreasury: (signal?: AbortSignal) =>
+    request<TreasuryOverview>("/v1/treasury/overview", { signal }),
+  // idempotencyKey MUST be stable across retries of the SAME withdrawal intent
+  // (a lost-response retry with a fresh key would double-broadcast). The caller
+  // owns the key and only rotates it for a genuinely new withdrawal.
+  withdraw: (amountSats: number, address: string, satPerVbyte: number | undefined, idempotencyKey: string) =>
+    request<WithdrawResult>("/v1/treasury/withdraw", {
+      method: "POST",
+      body: {
+        amount_sats: amountSats,
+        address,
+        ...(satPerVbyte ? { sat_per_vbyte: satPerVbyte } : {}),
+      },
+      idempotencyKey,
+    }),
   getRecentTransactions: (limit = 50, signal?: AbortSignal) =>
     request<{ data: Transaction[]; has_more: boolean }>(
       `/v1/transactions/recent?limit=${limit}`,

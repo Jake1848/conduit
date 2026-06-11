@@ -18,6 +18,7 @@ The default `.env` runs with `LND_MOCK=true` and a bootstrap admin key
 
 ```bash
 curl -s http://127.0.0.1:8000/v1/health
+# /v1/status exposes node liquidity, so it requires an ADMIN-scope key.
 curl -s -H 'Authorization: Bearer ck_test_dev_root' http://127.0.0.1:8000/v1/status
 ```
 

@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from ..db import get_session
 from ..db.models import Agent, APIKey, Policy, Transaction
 from ..errors import AgentNotFound, InsufficientBalance, InvalidInput
 from ..schemas import (
+    MAX_SATS,
     AgentCreate,
     AgentListOut,
     AgentOut,
@@ -19,6 +20,7 @@ from ..schemas import (
 from ..services import ledger
 from ..services.ids import agent_id as new_agent_id
 from ..services.ids import policy_id as new_policy_id
+from ..services.locks import lock_ledger
 from ..services.solvency import enforce_solvent
 
 router = APIRouter(prefix="/v1/agents", tags=["agents"])
@@ -76,10 +78,22 @@ async def create_agent(
 @router.get("", response_model=AgentListOut)
 async def list_agents(
     session: AsyncSession = Depends(get_session),
+    limit: int = Query(50, ge=1, le=500, description="Max agents to return"),
+    offset: int = Query(0, ge=0, description="Number of agents to skip (pagination)"),
     _=Depends(require_scope("read")),
 ) -> AgentListOut:
-    rows = (await session.execute(select(Agent).order_by(Agent.created_at.desc()))).scalars().all()
-    return AgentListOut(data=[AgentOut.model_validate(r) for r in rows])
+    # Bounded + paginated: the agent table can grow without limit, so never
+    # stream the whole fleet in one response. Newest first; page with offset.
+    rows = (
+        await session.execute(
+            select(Agent).order_by(Agent.created_at.desc()).limit(limit).offset(offset)
+        )
+    ).scalars().all()
+    # has_more: a full page may have more behind it — the client pages with
+    # offset += limit until a short page comes back.
+    return AgentListOut(
+        data=[AgentOut.model_validate(r) for r in rows], has_more=len(rows) == limit
+    )
 
 
 @router.get("/{agent_id}", response_model=AgentOut)
@@ -167,7 +181,14 @@ async def credit_agent(
         # ledger is currently under-backed by node liquidity — crediting adds a
         # liability, so it's the path to gate. No-op unless SOLVENCY_ENFORCE=true.
         enforce_solvent()
+        # Serialize against treasury withdrawals: a credit raises liabilities, so
+        # it must not commit inside a withdrawal's solvency read→send window.
+        await lock_ledger(session)
         agent = await _locked_agent(session, agent_id)
+        if (agent.balance_sats or 0) + body.sats > MAX_SATS:
+            raise InvalidInput(
+                f"Credit would push balance over the {MAX_SATS} sats ceiling."
+            )
         tx = await ledger.credit(
             session,
             agent,

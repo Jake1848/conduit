@@ -11,6 +11,7 @@ from ..db.models import Webhook
 from ..errors import NotFound
 from ..schemas import WebhookIn, WebhookOut
 from ..services.ids import webhook_id as new_webhook_id
+from ..services.safe_http import assert_safe_url_shallow
 
 router = APIRouter(prefix="/v1/webhooks", tags=["webhooks"])
 
@@ -21,6 +22,11 @@ async def create_webhook(
     session: AsyncSession = Depends(get_session),
     _=Depends(require_scope("admin")),
 ) -> WebhookOut:
+    # Validate the destination at creation time (https-only; reject literal
+    # internal/metadata IPs) WITHOUT a DNS lookup, so a valid endpoint isn't
+    # rejected for transient DNS failures. Delivery still does the authoritative
+    # resolve + IP-pin (safe_post). Raises 422.
+    assert_safe_url_shallow(body.url)
     secret = "whsec_" + secrets.token_urlsafe(32)
     wh = Webhook(
         id=new_webhook_id(),

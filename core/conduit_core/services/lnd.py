@@ -66,6 +66,14 @@ class Balance:
 
 
 @dataclass
+class OnchainSend:
+    """Result of an on-chain wallet send (SendCoins)."""
+
+    txid: str
+    amount_sats: int
+
+
+@dataclass
 class Invoice:
     payment_request: str
     payment_hash: str
@@ -147,6 +155,9 @@ class LNDClient(Protocol):
         preimage: bytes | None = None,
     ) -> PaymentResult: ...
     async def lookup_payment(self, payment_hash: str) -> PaymentLookup: ...
+    async def send_coins(
+        self, address: str, amount_sats: int, sat_per_vbyte: int | None = None
+    ) -> OnchainSend: ...
     def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]: ...
     async def close(self) -> None: ...
 
@@ -282,6 +293,19 @@ class MockLNDClient:
                     payment_preimage=p.payment_preimage,
                 )
         return PaymentLookup(status="UNKNOWN", payment_hash=payment_hash)
+
+    async def send_coins(
+        self, address: str, amount_sats: int, sat_per_vbyte: int | None = None
+    ) -> OnchainSend:
+        fee = 200  # flat simulated on-chain fee
+        async with self._lock:
+            if amount_sats + fee > self._state.confirmed_sats:
+                raise LNDError(
+                    f"insufficient on-chain funds: have {self._state.confirmed_sats}, "
+                    f"need {amount_sats} + {fee} fee"
+                )
+            self._state.confirmed_sats -= amount_sats + fee
+        return OnchainSend(txid=secrets.token_hex(32), amount_sats=amount_sats)
 
     async def _simulate_payment(
         self,
@@ -488,6 +512,26 @@ class LNDRestClient:
             raise LNDError(
                 f"lookup_payment({payment_hash}) failed: {e}"
             ) from e
+
+    async def send_coins(
+        self, address: str, amount_sats: int, sat_per_vbyte: int | None = None
+    ) -> OnchainSend:
+        """On-chain wallet send (LND SendCoins → POST /v1/transactions).
+
+        Spends from the node's on-chain wallet (confirmed UTXOs). The caller is
+        responsible for the solvency check BEFORE invoking this — once broadcast,
+        the send is irreversible.
+        """
+        body: dict[str, Any] = {"addr": address, "amount": amount_sats}
+        if sat_per_vbyte is not None:
+            body["sat_per_vbyte"] = sat_per_vbyte
+        data = await self._post("/v1/transactions", body)
+        txid = data.get("txid") or data.get("txid_str") or ""
+        if not txid:
+            # Never report a broadcast with no txid as success — that would let
+            # the idempotency layer cache a "successful" withdrawal we can't track.
+            raise LNDError(f"SendCoins returned no txid: {data!r}")
+        return OnchainSend(txid=txid, amount_sats=amount_sats)
 
     def _parse_payment(self, data: dict[str, Any], start: float) -> PaymentResult:
         status = data.get("status", "UNKNOWN")

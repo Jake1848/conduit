@@ -5,6 +5,50 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
+## [0.8.3] — Treasury (owner withdrawals), operator-wide idempotency, input hardening
+
+Owner/admin treasury feature plus a red-team-driven hardening pass. The new
+withdrawal path moves real on-chain funds, so it was adversarially reviewed and
+the confirmed findings fixed before release.
+
+### Added
+- **Treasury (owner/admin).** `GET /v1/treasury/overview` (accrued platform-fee
+  revenue + node liquidity + solvency ratio + withdrawable headroom + recent
+  withdrawals) and `POST /v1/treasury/withdraw` to move accrued on-chain funds to
+  an operator address. Admin scope only. A new owner page in the console shows
+  revenue, liquidity/solvency, a withdraw form (with live headroom + confirm),
+  revenue-by-day, and the Bitcoin-transfer history.
+- **On-chain `send_coins`** on the LND client (protocol/mock/REST → LND
+  `SendCoins`), and a durable `treasury_withdrawals` table (migration `0008`):
+  each withdrawal is recorded `pending` before the irreversible broadcast and
+  `broadcast`/`failed` after, so a crash mid-broadcast leaves a reconcilable
+  record. Doubles as the operator's BTC-transfer history.
+- **`has_more`** on `GET /v1/agents` so clients can page the whole fleet.
+
+### Security / correctness
+- **Solvency guard on withdrawals is race-safe.** The withdraw holds a
+  transaction-scoped advisory ledger lock (`pg_advisory_xact_lock`) across the
+  solvency read AND the on-chain broadcast; the operator-credit path takes the
+  same lock. So neither a concurrent withdrawal nor a concurrent credit can raise
+  liabilities inside the read→send window and breach solvency (a TOCTOU the
+  red-team found). The fee reserve scales with the requested fee rate (was a flat
+  1000 sats). An empty/missing `txid` from LND is now a hard error, never a
+  cached "successful" withdrawal.
+- **Idempotency keys are now operator-wide** (unique on `key` alone, was
+  `(api_key_id, key)`; migration `0007`). A retried request that goes out under a
+  different API key (rotation, a second worker) now dedupes instead of
+  double-charging. A key reused with a different body still 409s.
+- **Input hardening** (earlier red-team 500s → clean 422s): `MAX_SATS` upper
+  bound on every sats/amount field, null-byte rejection (`SafeStr`) on names /
+  reasons / memos / API-key labels, and a per-agent balance ceiling on credit.
+- **Webhook URLs are validated at creation** (https-only, reject literal
+  internal/metadata IPs) without a DNS lookup, so a transient resolver failure
+  can't block a valid endpoint; delivery still does the authoritative,
+  DNS-rebind-safe resolve+pin.
+- **`/v1/status` requires admin scope** (it exposes node liquidity), and
+  `GET /v1/agents` is paginated (`limit`/`offset`, default 50, max 500) instead
+  of streaming the whole table.
+
 ## [0.8.2] — Concurrency ledger fix
 
 ### Fixed

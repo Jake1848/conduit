@@ -186,6 +186,10 @@ input, textarea, select { font-family: inherit; }
 
 /* ============ STAT CARDS ============ */
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+/* Treasury: liquidity/solvency + withdraw side by side. */
+.treasury-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+@media (max-width: 900px) { .treasury-cols { grid-template-columns: 1fr; } }
 .stat-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 18px 20px;
