@@ -171,8 +171,20 @@ export class Agent {
 
   static async list(client?: Conduit): Promise<Agent[]> {
     const c = client ?? defaultClient();
-    const data = await c.get<{ data: AgentJSON[] }>("/v1/agents");
-    return data.data.map((d) => new Agent(d, c));
+    // The API paginates /v1/agents (default 50, max 500). Page through with
+    // has_more so the whole fleet is returned, never silently truncated (M7).
+    const all: AgentJSON[] = [];
+    const limit = 500;
+    let offset = 0;
+    for (let page = 0; page < 200; page++) {
+      const r = await c.get<{ data: AgentJSON[]; has_more?: boolean }>(
+        `/v1/agents?limit=${limit}&offset=${offset}`,
+      );
+      all.push(...r.data);
+      if (!r.has_more || r.data.length === 0) break;
+      offset += limit;
+    }
+    return all.map((d) => new Agent(d, c));
   }
 
   async pay(opts: PayOptions): Promise<Receipt> {

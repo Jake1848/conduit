@@ -85,8 +85,10 @@ class PolicyIn(BaseModel):
     max_per_hour: int | None = Field(None, ge=1, le=MAX_SATS)
     max_per_day: int | None = Field(None, ge=1, le=MAX_SATS)
     max_per_minute_count: int | None = Field(60, ge=1, le=10_000)
-    allowlist: list[str] | None = None
-    blocklist: list[str] | None = None
+    # Bounded (audit L8): each is a list of ≤66-hex Lightning pubkeys; cap the
+    # count and item length so a policy can't store an unbounded blob.
+    allowlist: list[Annotated[str, Field(max_length=140)]] | None = Field(None, max_length=1000)
+    blocklist: list[Annotated[str, Field(max_length=140)]] | None = Field(None, max_length=1000)
     require_memo: bool = False
     enabled: bool = True
 
@@ -111,21 +113,23 @@ class PolicyOut(BaseModel):
 class PaymentSendIn(BaseModel):
     """Pay a BOLT11 invoice or do keysend to a pubkey."""
     agent_id: str
-    payment_request: str | None = Field(None, description="BOLT11 invoice string")
-    dest_pubkey: str | None = Field(None, description="For keysend")
+    payment_request: str | None = Field(None, max_length=4000, description="BOLT11 invoice string")
+    dest_pubkey: str | None = Field(None, max_length=140, description="For keysend")
     sats: int | None = Field(
         None, ge=1, le=MAX_SATS, description="Required for keysend or zero-amount invoices"
     )
-    memo: SafeStr | None = None
+    memo: SafeStr | None = Field(None, max_length=500)  # bounded (L7)
     metadata: dict[str, Any] | None = None
 
 
 class PaymentPayIn(BaseModel):
     """Pay a Conduit/Lightning Address: name@host or ln address."""
     agent_id: str
-    to: str = Field(..., description="Lightning address (name@host) or BOLT11 invoice")
+    to: str = Field(
+        ..., max_length=2000, description="Lightning address (name@host) or BOLT11 invoice"
+    )
     sats: int = Field(..., ge=1, le=MAX_SATS)
-    memo: SafeStr | None = None
+    memo: SafeStr | None = Field(None, max_length=500)  # bounded (L7)
     metadata: dict[str, Any] | None = None
 
 
@@ -188,7 +192,7 @@ class TransactionListOut(BaseModel):
 # ---------- Webhooks ----------
 
 class WebhookIn(BaseModel):
-    url: str
+    url: SafeStr = Field(..., max_length=2000)  # SafeStr rejects null bytes (→422 not 500)
     events: list[str] = Field(default_factory=lambda: ["payment.settled", "payment.failed"])
 
 

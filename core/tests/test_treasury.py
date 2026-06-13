@@ -194,31 +194,33 @@ async def test_withdraw_key_reusable_after_guard_failure(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_withdraw_failed_send_is_retryable_same_key(client: AsyncClient, monkeypatch):
-    # A genuinely failed send leaves a `failed` row; a same-key retry must REUSE
-    # that row (not collide on its idempotency_key) and succeed once.
+async def test_withdraw_ambiguous_send_is_not_retryable_same_key(client: AsyncClient, monkeypatch):
+    # BLOCKER regression (audit B1): a send_coins exception is AMBIGUOUS — the tx
+    # may have broadcast (timeout after broadcast). It must terminalize to
+    # `unknown`, and a SAME-KEY retry must 409 (NEVER re-broadcast → no
+    # double-spend). The operator reconciles + uses a fresh key.
     from conduit_core.errors import LNDError
     from conduit_core.services.lnd import get_lnd
 
     lnd = get_lnd()
-    orig = lnd.send_coins
     calls = {"n": 0}
 
-    async def flaky(address, amount_sats, sat_per_vbyte=None):
+    async def always_raise(address, amount_sats, sat_per_vbyte=None):
         calls["n"] += 1
-        if calls["n"] == 1:
-            raise LNDError("simulated send failure")
-        return await orig(address, amount_sats, sat_per_vbyte)
+        raise LNDError("simulated ambiguous send failure (may have broadcast)")
 
-    monkeypatch.setattr(lnd, "send_coins", flaky)
-    headers = {"Idempotency-Key": "flaky-send"}
+    monkeypatch.setattr(lnd, "send_coins", always_raise)
+    headers = {"Idempotency-Key": "ambiguous-send"}
     body = {"amount_sats": 30_000, "address": WITHDRAW_ADDR}
     r1 = await client.post("/v1/treasury/withdraw", json=body, headers=headers)
-    assert r1.status_code == 502, r1.text  # send failed (LNDError -> 502)
+    assert r1.status_code == 502, r1.text  # LNDError -> 502
+    # The durable record is `unknown`, not `failed`.
+    hist = (await client.get("/v1/treasury/overview")).json()["recent_withdrawals"]
+    assert hist and hist[0]["status"] == "unknown"
+    # Same-key retry -> 409, and send_coins is NOT called a second time.
     r2 = await client.post("/v1/treasury/withdraw", json=body, headers=headers)
-    assert r2.status_code == 201, r2.text  # same key retryable after a failed send
-    assert r2.json()["txid"]
-    assert calls["n"] == 2  # exactly one real broadcast (the retry)
+    assert r2.status_code == 409, r2.text
+    assert calls["n"] == 1, "ambiguous send must never be re-broadcast under the same key"
 
 
 @pytest.mark.asyncio

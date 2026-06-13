@@ -206,6 +206,22 @@ async def _conduit_error_handler(_: Request, exc: ConduitError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
+@app.exception_handler(RecursionError)
+async def _recursion_error_handler(_: Request, exc: RecursionError) -> JSONResponse:
+    # A pathologically deep/nested JSON body trips Python's recursion limit during
+    # parse/validation. Return a clean 422, not a 500 (audit M4).
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "error": "invalid_input",
+                "code": "INVALID_INPUT",
+                "detail": "Request body is too deeply nested.",
+            }
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     # Catch-all so a crash on a payment path returns structured JSON, not HTML.

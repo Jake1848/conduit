@@ -28,6 +28,19 @@ curl -s -H 'Authorization: Bearer ck_test_dev_root' http://127.0.0.1:8000/v1/sta
 pytest -v
 ```
 
+> **The default suite runs on SQLite, which has no row locking.** The authoritative
+> money-path concurrency invariants (lost-update ledger drift, the overspend race,
+> and the treasury withdraw-vs-credit solvency TOCTOU) are **skipped** on SQLite and
+> only run against Postgres — the only supported production DB. Run the full money
+> suite before shipping:
+>
+> ```bash
+> DATABASE_URL=postgresql+asyncpg://conduit:PW@localhost:5432/conduit pytest -v \
+>   tests/test_concurrency_ledger.py tests/test_treasury.py
+> ```
+>
+> CI's `core-postgres` job runs these on every push.
+
 ## Production deployment
 
 Production has a few hard requirements enforced at startup. If you forget

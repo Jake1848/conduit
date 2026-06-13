@@ -157,6 +157,33 @@ async def test_failed_lookup_refunds_full_debit(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reconcile_is_idempotent_no_double_refund(client, monkeypatch):
+    """Audit M13: the route-refund-vs-reconcile-sweep double-process is guarded by
+    a status re-check under the agent lock. Reconciling the SAME pending send
+    twice must refund EXACTLY once — the second pass sees a non-pending row and
+    no-ops, so the balance is never restored twice (double-spend the other way)."""
+    from conduit_core.db.database import SessionLocal
+    from conduit_core.services.lnd import PaymentLookup, get_lnd
+    from conduit_core.services.reconciler import PaymentReconciler
+
+    payment_hash = "ef" * 32
+    agent_id, tx_id_value, bal_before = await _make_pending_send(
+        client, sats=3_000, fee_budget=30, payment_hash=payment_hash, age_seconds=120
+    )
+
+    async def lookup_fail(self, ph):
+        return PaymentLookup(status="FAILED", payment_hash=ph, failure_reason="NO_ROUTE")
+
+    monkeypatch.setattr(type(get_lnd()), "lookup_payment", lookup_fail)
+    rec = PaymentReconciler(get_lnd(), SessionLocal, min_age_seconds=0)
+
+    assert (await rec.reconcile_one(tx_id_value)) is True  # first pass refunds
+    await rec.reconcile_one(tx_id_value)  # second pass must be a no-op
+    bal_after = (await client.get(f"/v1/agents/{agent_id}/balance")).json()["available_sats"]
+    assert bal_after == bal_before, "double-refund: balance restored more than once"
+
+
+@pytest.mark.asyncio
 async def test_in_flight_lookup_leaves_pending(client, monkeypatch):
     from conduit_core.db.database import SessionLocal
     from conduit_core.services import reconciler as rec_module

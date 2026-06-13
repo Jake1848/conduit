@@ -100,8 +100,18 @@ class Agent:
     @classmethod
     def list(cls, *, client: Conduit | None = None) -> list["Agent"]:
         c = client or default_client()
-        data = c.get("/v1/agents")
-        return [cls._from_api(item, client=c) for item in data.get("data", [])]
+        # The API paginates /v1/agents (default 50, max 500). Page through with
+        # has_more so the whole fleet is returned, never silently truncated (M7).
+        items: list[dict[str, Any]] = []
+        offset = 0
+        for _ in range(200):  # safety cap (100k agents)
+            data = c.get("/v1/agents", params={"limit": 500, "offset": offset})
+            page = data.get("data", [])
+            items.extend(page)
+            if not data.get("has_more") or not page:
+                break
+            offset += 500
+        return [cls._from_api(item, client=c) for item in items]
 
     @classmethod
     def _from_api(cls, data: dict[str, Any], client: Conduit) -> "Agent":

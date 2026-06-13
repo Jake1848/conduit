@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_scope
 from ..config import get_settings
 from ..db import get_session
-from ..db.models import Agent, Transaction
+from ..db.models import Agent, APIKey, Transaction
 from ..schemas import HourBucket, MetricsOut, TopAgentOut
 from ..services.solvency import latest_snapshot
 
@@ -21,8 +21,13 @@ router = APIRouter(prefix="/v1", tags=["metrics"])
 @router.get("/metrics", response_model=MetricsOut)
 async def metrics(
     session: AsyncSession = Depends(get_session),
-    _=Depends(require_scope("read")),
+    api_key: APIKey = Depends(require_scope("read")),
 ) -> MetricsOut:
+    # Operator liquidity/solvency/revenue is admin-only — a read-scope key (a
+    # data-plane key) must not see node assets/liabilities/treasury/fees (audit
+    # M3; same data is admin-gated on /v1/status + edge-blocked on /metrics
+    # Prometheus). Fleet-activity counters stay readable.
+    is_admin = api_key.scope == "admin"
     now = datetime.now(UTC)
     hour0 = now.replace(minute=0, second=0, microsecond=0)
     cutoff_24h = hour0 - timedelta(hours=23)
@@ -151,7 +156,7 @@ async def metrics(
         solvent = True
 
     return MetricsOut(
-        treasury_sats=int(treasury),
+        treasury_sats=int(treasury) if is_admin else 0,
         active_agents=int(active),
         total_agents=int(total),
         tx_per_min=int(tx_per_min),
@@ -159,10 +164,10 @@ async def metrics(
         p99_settlement_ms=p99_ms,
         hourly=hourly,
         top_agents=top_agents,
-        fee_revenue_total_sats=int(fee_total),
-        fee_revenue_today_sats=int(fee_today),
-        liabilities_sats=int(liabilities_sats),
-        assets_sats=int(assets_sats),
-        solvency_ratio=solvency_ratio,
-        solvent=solvent,
+        fee_revenue_total_sats=int(fee_total) if is_admin else 0,
+        fee_revenue_today_sats=int(fee_today) if is_admin else 0,
+        liabilities_sats=int(liabilities_sats) if is_admin else 0,
+        assets_sats=int(assets_sats) if is_admin else 0,
+        solvency_ratio=solvency_ratio if is_admin else None,
+        solvent=solvent if is_admin else True,
     )

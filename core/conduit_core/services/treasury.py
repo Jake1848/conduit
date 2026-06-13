@@ -92,30 +92,20 @@ async def mark_broadcast(
         return False
 
 
-async def reset_to_pending(wid: str, fee_reserve_sats: int) -> None:
-    """Re-arm a previously `failed` withdrawal row for a same-key retry. Reusing
-    the existing row (instead of inserting a new one with the same idempotency
-    key) avoids a self-collision on the unique key index that would otherwise
-    brick the retry with a false 409."""
+async def mark_unknown(wid: str, error: str) -> None:
+    """Terminalize a withdrawal whose `send_coins` raised into `unknown` —
+    NOT `failed`. An exception from the LND on-chain send is AMBIGUOUS: a
+    timeout / dropped connection / 5xx can occur AFTER LND already broadcast,
+    so we must never treat it as a clean failure that a same-key retry could
+    re-broadcast (that would double-spend). The row is left `unknown` and a
+    same-key retry 409s (see the route); the operator reconciles against the
+    chain (amount+address) and uses a fresh key for a genuinely new attempt."""
     from ..db import SessionLocal
 
     async with SessionLocal() as s:
         w = await s.get(TreasuryWithdrawal, wid)
         if w is not None:
-            w.status = "pending"
-            w.error = None
-            w.txid = None
-            w.fee_reserve_sats = fee_reserve_sats
-            await s.commit()
-
-
-async def mark_failed(wid: str, error: str) -> None:
-    from ..db import SessionLocal
-
-    async with SessionLocal() as s:
-        w = await s.get(TreasuryWithdrawal, wid)
-        if w is not None:
-            w.status = "failed"
+            w.status = "unknown"
             w.error = error[:500]
             await s.commit()
 

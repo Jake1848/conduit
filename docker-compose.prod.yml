@@ -63,6 +63,11 @@ services:
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-60}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Operator platform fee (revenue). Without these, prod silently used the
+      # code default (0.5% / 1 / 1000) regardless of operator intent (audit M11).
+      PLATFORM_FEE_PERCENT: ${PLATFORM_FEE_PERCENT:-0.5}
+      PLATFORM_FEE_MIN_SATS: ${PLATFORM_FEE_MIN_SATS:-1}
+      PLATFORM_FEE_MAX_SATS: ${PLATFORM_FEE_MAX_SATS:-1000}
     volumes:
       - ./secrets/admin.macaroon:/lnd/admin.macaroon:ro
       - ./secrets/tls.cert:/lnd/tls.cert:ro

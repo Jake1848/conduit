@@ -51,6 +51,7 @@ lower ones).
 | Tool | Purpose | Required scope |
 | ---- | ------- | -------------- |
 | `conduit_create_wallet` | Create an agent wallet with a daily limit (sats) | `admin` |
+| `conduit_credit`        | Fund an agent wallet from operator node liquidity (sats) | `admin` |
 | `conduit_attach_policy` | Set spending controls: per-tx, hourly, daily, allow/blocklist | `admin` |
 | `conduit_balance`       | Read current balance | `read` |
 | `conduit_pay`           | Send to a Lightning address (`name@host`) or BOLT11 invoice | `write` |

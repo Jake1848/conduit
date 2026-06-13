@@ -57,8 +57,14 @@ if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T \
       "$PG_SERVICE" pg_dump -U "$PG_USER" -d "$PG_DB" \
       | gzip -c > "$TMP"; then
   mv "$TMP" "$OUT"
+  # Verify the gzip is intact before trusting it — a silently-corrupt dump is
+  # worse than no backup (you only find out during a restore emergency). (M10)
+  if ! gzip -t "$OUT" 2>/dev/null; then
+    rm -f "$OUT"
+    fail "backup failed gzip integrity check (gzip -t): ${OUT}"
+  fi
   SIZE="$(du -h "$OUT" | cut -f1)"
-  log "OK: wrote ${OUT} (${SIZE})"
+  log "OK: wrote ${OUT} (${SIZE}, gzip-verified)"
 else
   rm -f "$TMP"
   fail "pg_dump pipeline failed"

@@ -85,7 +85,14 @@ class IdempotencyPruner:
         cutoff = datetime.now(UTC) - self._retention
         async with self._session_factory() as session:
             result = await session.execute(
-                delete(IdempotencyRecord).where(IdempotencyRecord.created_at < cutoff)
+                # Only prune FINALIZED rows — NEVER a still-_PENDING (response_status
+                # == 0) reservation. Pruning a stranded pending row (from a mid-
+                # request crash) would let a much-later same-key retry re-execute a
+                # payment that may have already settled — a delayed double-spend. (L4)
+                delete(IdempotencyRecord).where(
+                    IdempotencyRecord.created_at < cutoff,
+                    IdempotencyRecord.response_status != 0,
+                )
             )
             await session.commit()
         deleted = result.rowcount or 0

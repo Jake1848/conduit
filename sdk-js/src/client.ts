@@ -113,6 +113,13 @@ export class Conduit {
     };
     if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
 
+    // A non-idempotent write (a POST WITHOUT an Idempotency-Key — e.g. credit /
+    // debit / createInvoice / policy.attach) must NOT be auto-replayed on an
+    // ambiguous failure (network drop / 5xx): the server may have already applied
+    // it, so a retry would double-apply (audit M8). GET/DELETE are idempotent; a
+    // keyed POST dedupes server-side; a 429 (rate-limited) was never processed.
+    const replaySafe = method === "GET" || method === "DELETE" || idempotencyKey != null;
+
     while (true) {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), this.timeoutMs);
@@ -126,8 +133,9 @@ export class Conduit {
         });
       } catch (e) {
         clearTimeout(timer);
-        // Network/timeout error — safe to retry (payments carry an idempotency key).
-        if (attempt < this.maxRetries) {
+        // Network/timeout = ambiguous (may have been applied) — only auto-retry
+        // when the request is replay-safe.
+        if (replaySafe && attempt < this.maxRetries) {
           await this.backoff(attempt, null);
           attempt++;
           continue;
@@ -137,7 +145,11 @@ export class Conduit {
       clearTimeout(timer);
 
       if (res.status >= 400) {
-        if (isRetryableStatus(res.status) && attempt < this.maxRetries) {
+        // 429 is always retryable (rate-limited → never processed); 5xx is
+        // ambiguous, so only replay it when the request is replay-safe.
+        const statusRetryable =
+          res.status === 429 || (isRetryableStatus(res.status) && replaySafe);
+        if (statusRetryable && attempt < this.maxRetries) {
           await this.backoff(attempt, res.headers.get("Retry-After"));
           attempt++;
           continue;

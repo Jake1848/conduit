@@ -92,3 +92,72 @@ async def test_concurrent_distinct_payments_keep_balance_consistent(client):
     )
     # And the balance must never be impossible.
     assert bal["available_sats"] >= 0
+
+
+@pytest.mark.skipif(
+    not _IS_POSTGRES,
+    reason="overspend protection relies on SELECT ... FOR UPDATE row locking, "
+    "only enforced on Postgres",
+)
+async def test_concurrent_payments_cannot_overspend(client):
+    """Audit H7: N payments that each individually pass the balance check but
+    together exceed the balance — exactly N-1 settle, 1 gets 402, never overspend.
+    sats=100 so fee_budget (1) == actual mock fee (1): no fee refund frees balance,
+    making the cutoff deterministic. debit_total = 100 + 1 fee + 1 platform = 102."""
+    agent_id = await _create_agent(client, "overspend-race")
+    n = 20
+    debit_total = 102
+    credited = n * debit_total - 1  # room for exactly n-1
+    await _credit(client, agent_id, credited)
+
+    payloads = [
+        {"agent_id": agent_id, "dest_pubkey": _DEST, "sats": 100, "memo": f"os-{i}"}
+        for i in range(n)
+    ]
+    results = await asyncio.gather(
+        *(client.post("/v1/payments/send", json=p) for p in payloads)
+    )
+    codes = [r.status_code for r in results]
+    ok = [r for r in results if r.status_code in (200, 201)]
+    rejected = [r for r in results if r.status_code == 402]
+    assert len(ok) == n - 1, f"expected {n - 1} settled, got {len(ok)}: {codes}"
+    assert len(rejected) == 1, f"expected exactly 1 overdraft 402: {codes}"
+    assert rejected[0].json()["detail"]["code"] == "INSUFFICIENT_BALANCE"
+
+    bal = (await client.get(f"/v1/agents/{agent_id}/balance")).json()
+    txs = (
+        await client.get(f"/v1/agents/{agent_id}/transactions?limit=500")
+    ).json()["data"]
+    assert bal["available_sats"] == credited - _ledger_debited(txs)
+    assert bal["available_sats"] >= 0  # the invariant: never overspent
+
+
+@pytest.mark.skipif(
+    not _IS_POSTGRES,
+    reason="the treasury ledger advisory lock (pg_advisory_xact_lock) is a no-op on "
+    "SQLite; the withdraw TOCTOU it prevents is only testable on Postgres",
+)
+async def test_concurrent_withdrawals_cannot_breach_solvency(client):
+    """Audit H8: two /treasury/withdraw each within headroom but together breaching
+    solvency — exactly one succeeds, the other 422s on the guard. Without the
+    advisory lock both would read the same pre-send assets and over-withdraw."""
+    from conduit_core.services.lnd import MockLNDClient, _MockState, get_lnd
+
+    lnd = get_lnd()
+    if isinstance(lnd, MockLNDClient):
+        lnd._state = _MockState()  # assets = 5M on-chain + 5M channel = 10M
+
+    # Liabilities = 9.9M so withdrawable headroom (~92k after reserve) fits ONE
+    # 60k withdrawal but not two.
+    agent_id = await _create_agent(client, "withdraw-toctou")
+    await _credit(client, agent_id, 9_900_000)
+    addr = "bcrt1qtoctoptest00000000000000"
+    body = {"amount_sats": 60_000, "address": addr}
+    r1, r2 = await asyncio.gather(
+        client.post("/v1/treasury/withdraw", json=body, headers={"Idempotency-Key": "toctou-a"}),
+        client.post("/v1/treasury/withdraw", json=body, headers={"Idempotency-Key": "toctou-b"}),
+    )
+    codes = sorted([r1.status_code, r2.status_code])
+    assert codes == [201, 422], (
+        f"expected one success + one solvency-422, got {codes}: {r1.text} | {r2.text}"
+    )

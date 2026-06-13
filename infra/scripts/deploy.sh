@@ -188,6 +188,13 @@ recreate_and_gate() {
   # even if compose thinks nothing changed; idempotent to re-run.
   dc up -d --no-deps --force-recreate "$API_SERVICE"
 
+  # Re-point nginx at the freshly-recreated container immediately (its IP
+  # changed on recreate). Without this, nginx proxies to the destroyed old
+  # container for the WHOLE health-gate window → up to ~90s of edge 502s (audit
+  # H6). Doing it now shrinks the only 502 window to the new api's boot/migrate
+  # time. Best-effort; the gate below still rolls back if it never goes ready.
+  reload_nginx || warn "nginx reload right after recreate failed (will retry post-gate)"
+
   log "health-gating on ${HEALTH_URL} (up to $((HEALTH_RETRIES * HEALTH_INTERVAL))s)"
   local i
   for ((i = 1; i <= HEALTH_RETRIES; i++)); do

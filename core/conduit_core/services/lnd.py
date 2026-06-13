@@ -535,10 +535,21 @@ class LNDRestClient:
 
     def _parse_payment(self, data: dict[str, Any], start: float) -> PaymentResult:
         status = data.get("status", "UNKNOWN")
-        if status != "SUCCEEDED":
+        if status == "FAILED":
+            # DEFINITE terminal failure → safe to refund (route Phase 3a).
             raise PaymentFailed(
                 f"Lightning payment failed: {data.get('failure_reason', status)}",
                 lnd_status=status,
+            )
+        if status != "SUCCEEDED":
+            # Empty / UNKNOWN / IN_FLIGHT / missing terminal frame (e.g. the
+            # stream closed cleanly before LND emitted a terminal event). The
+            # payment MAY still settle, so this MUST NOT refund. Raise LNDError
+            # (not PaymentFailed) so the route's UNKNOWN-state handler (Phase 3c)
+            # marks it needs_reconciliation instead of refunding → no double-spend.
+            raise LNDError(
+                f"Lightning payment ended in a non-terminal/unknown state "
+                f"({status!r}); not refunding — reconcile against LND."
             )
         return PaymentResult(
             payment_hash=data["payment_hash"],
@@ -555,7 +566,10 @@ class LNDRestClient:
             r.raise_for_status()
             return r.json()
         except httpx.HTTPError as e:
-            raise LNDError(f"LND GET {path} failed: {e}") from e
+            # The httpx error embeds the node's host:port — log it server-side
+            # only, never to the client (H5: don't disclose internal LND address).
+            log.warning("lnd_request_failed", op="GET", path=path, error=str(e))
+            raise LNDError("The Lightning node is unavailable or returned an error.") from e
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -563,7 +577,8 @@ class LNDRestClient:
             r.raise_for_status()
             return r.json()
         except httpx.HTTPError as e:
-            raise LNDError(f"LND POST {path} failed: {e}") from e
+            log.warning("lnd_request_failed", op="POST", path=path, error=str(e))
+            raise LNDError("The Lightning node is unavailable or returned an error.") from e
 
     async def _post_streaming(
         self, path: str, body: dict[str, Any]
@@ -595,7 +610,8 @@ class LNDRestClient:
                     parsed = _json.loads(line)
                     last = parsed.get("result", parsed)
         except httpx.HTTPError as e:
-            raise LNDError(f"LND POST (stream) {path} failed: {e}") from e
+            log.warning("lnd_request_failed", op="POST(stream)", path=path, error=str(e))
+            raise LNDError("The Lightning node is unavailable or returned an error.") from e
         return last or {}
 
     async def subscribe_invoices(self) -> AsyncIterator[InvoiceUpdate]:

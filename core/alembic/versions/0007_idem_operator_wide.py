@@ -30,13 +30,18 @@ def upgrade() -> None:
     # Collapse duplicate keys (different api_key_id, same key) keeping the newest
     # row, so the operator-wide unique index can be built. Ties on created_at are
     # broken by id. Safe: idempotency rows are a transient cache (pruned by TTL).
+    # Portable subquery form (DELETE ... WHERE id IN (...)) so it works on BOTH
+    # Postgres AND SQLite — the Postgres-only `DELETE ... USING` crashed SQLite
+    # (audit H3), breaking the SQLite migration/CI path.
     op.execute(
         f"""
-        DELETE FROM {_TABLE} a
-        USING {_TABLE} b
-        WHERE a.key = b.key
-          AND (a.created_at < b.created_at
-               OR (a.created_at = b.created_at AND a.id < b.id))
+        DELETE FROM {_TABLE}
+        WHERE id IN (
+            SELECT a.id FROM {_TABLE} a
+            JOIN {_TABLE} b ON a.key = b.key
+            WHERE a.created_at < b.created_at
+               OR (a.created_at = b.created_at AND a.id < b.id)
+        )
         """
     )
     op.drop_index(_INDEX, table_name=_TABLE)

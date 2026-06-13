@@ -67,6 +67,10 @@ def _is_unsafe_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     # address is classified as the IPv4 loopback it really is.
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
+    # Belt-and-suspenders: explicitly reject classes `is_global` can wrongly
+    # permit on some Python versions (notably IPv4 multicast 224.0.0.0/4). (L9)
+    if ip.is_multicast or ip.is_reserved or ip.is_unspecified or ip.is_loopback:
+        return True
     # ALLOWLIST, not denylist: permit ONLY globally-routable public addresses.
     # `is_global` is False for RFC1918, loopback, link-local (incl the
     # 169.254.169.254 cloud-metadata IP), CGNAT/RFC6598 (100.64.0.0/10), IPv6 ULA,

@@ -9,7 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
+import { useAuth } from "./auth";
+import { useToast } from "./toast";
 import type { Agent, Balance } from "./types";
 
 interface AppData {
@@ -19,6 +21,7 @@ interface AppData {
   balancesReady: boolean;
   treasurySats: number;
   activeCount: number;
+  error: string | null; // set when a refresh fails (so the UI isn't silently stale)
   refresh: () => void;
 }
 
@@ -27,7 +30,10 @@ const Ctx = createContext<AppData | null>(null);
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const { disconnect } = useAuth();
+  const toast = useToast();
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
@@ -39,12 +45,25 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     async function load() {
       try {
         const list = await api.listAgents(ctrl.signal);
-        if (!cancelled) {
-          setAgents(list);
-          setLoadingAgents(false);
+        if (cancelled) return;
+        setAgents(list);
+        setLoadingAgents(false);
+        setError(null); // recovered
+      } catch (e) {
+        if (cancelled || (e as Error)?.name === "AbortError") return;
+        setLoadingAgents(false);
+        // M9: never silently show stale/empty data. A revoked key (401/403)
+        // drops to the login screen; any other failure surfaces a banner +
+        // one toast (don't spam on the 30s poll).
+        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+          toast.err("Your API key was rejected — please reconnect.");
+          disconnect();
+        } else {
+          if (error === null) {
+            toast.err("Couldn't reach the Conduit API — showing last known data.");
+          }
+          setError(e instanceof Error ? e.message : "Connection error");
         }
-      } catch {
-        if (!cancelled) setLoadingAgents(false);
       }
     }
     load();
@@ -54,6 +73,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       clearInterval(t);
       ctrl.abort();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 
   const balances = useMemo(() => {
@@ -84,6 +104,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         balancesReady: !loadingAgents,
         treasurySats,
         activeCount,
+        error,
         refresh,
       }}
     >
