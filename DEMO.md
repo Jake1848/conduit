@@ -56,11 +56,12 @@ shared demo key.
 ### Install the server
 
 ```bash
-pip install conduit-mcp
+pip install conduit-btc-mcp
 ```
 
-> Until `conduit-mcp 0.8.4` is published to PyPI you can install from this repo:
-> `pip install ./sdk-python ./mcp-server` (installs the SDK it depends on too).
+> Installs the `conduit-btc-mcp` package (which pulls in the `conduit-btc` SDK);
+> the console command it provides is `conduit-mcp`. To run from a checkout of
+> this repo instead: `pip install ./sdk-python ./mcp-server`.
 
 ### Configure Claude Desktop
 

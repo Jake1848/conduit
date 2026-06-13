@@ -1,7 +1,10 @@
-# conduit-mcp
+# conduit-btc-mcp
 
 Model Context Protocol server that exposes Conduit Lightning payments as tools
 to any MCP-compatible AI agent (Claude Desktop, Cursor, custom agents).
+
+> Installs as the PyPI package **`conduit-btc-mcp`**; the console command it
+> provides is **`conduit-mcp`** (that's what you put in `claude_desktop_config.json`).
 
 Conduit is **self-hosted and non-custodial**. This MCP server connects to **your
 own** Conduit instance — the one you run against **your own** LND node, with
@@ -19,7 +22,7 @@ Your node, your keys, your rules.
 ## Install
 
 ```bash
-pip install conduit-mcp
+pip install conduit-btc-mcp
 ```
 
 ## Configure (Claude Desktop)

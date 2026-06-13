@@ -1,5 +1,5 @@
 [project]
-name = "conduit-lightning"
+name = "conduit-btc"
 version = "0.8.4"
 description = "Self-hosted, non-custodial Bitcoin Lightning payments for autonomous AI agents — your node, your keys, your rules."
 readme = "README.md"

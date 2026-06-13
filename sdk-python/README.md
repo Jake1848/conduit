@@ -1,4 +1,4 @@
-# conduit-lightning
+# conduit-btc
 
 Python SDK for **Conduit** — self-hosted, non-custodial Bitcoin Lightning
 payment infrastructure for autonomous AI agents.
@@ -8,7 +8,7 @@ on your own infrastructure, against your own LND node, with your own keys. It
 never touches your funds — it's a thin client for *your* Conduit instance.
 
 ```bash
-pip install conduit-lightning
+pip install conduit-btc
 ```
 
 > The importable package is `conduit`:

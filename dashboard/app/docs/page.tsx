@@ -55,7 +55,7 @@ const SECTIONS: { heading: string; links: DocLink[] }[] = [
       {
         icon: FileCode,
         title: "Python SDK",
-        desc: "pip install conduit-lightning (import conduit). Agent + ConduitClient, policies, payments.",
+        desc: "pip install conduit-btc (import conduit). Agent + ConduitClient, policies, payments.",
         href: `${REPO}/blob/main/sdk-python/README.md`,
         cta: "sdk-python/README",
       },

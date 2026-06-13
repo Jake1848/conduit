@@ -7,7 +7,7 @@ make Lightning payments through an agent wallet on the **operator's own** node.
 **you** run — the agent holds an API key, not a signing key.)
 
 ```bash
-pip install conduit-mcp
+pip install conduit-btc-mcp
 ```
 
 ## Claude Desktop

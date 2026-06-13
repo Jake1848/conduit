@@ -55,6 +55,13 @@ agent-pays-over-Lightning demo. No schema changes; api-container-only deploy.
   runnable lifecycle; `mcp-server/scripts/smoke_test.py` drives all eight MCP
   tools through the real stdio protocol and asserts policy enforcement.
 
+### Packaging
+- Published to PyPI as **`conduit-btc`** (the Python SDK, `import conduit`) and
+  **`conduit-btc-mcp`** (the MCP server, console command `conduit-mcp`) — the
+  `conduit-lightning` / `conduit-mcp` names were already taken on PyPI by
+  unrelated third parties. The TypeScript SDK remains `@conduit-btc/sdk`. Import
+  names and the `conduit-mcp` command are unchanged.
+
 ## [0.8.3] — Treasury (owner withdrawals), operator-wide idempotency, input hardening
 
 Owner/admin treasury feature plus a red-team-driven hardening pass. The new

@@ -67,9 +67,9 @@ Collected fees are reported at `GET /v1/fees` (admin) and surfaced in
 .
 ├── website/         Landing page (deployed to conduit.energy)
 ├── core/            Conduit Core API — FastAPI server you run in front of your LND
-├── sdk-python/      Python SDK (`conduit-lightning` on PyPI; import `conduit`)
+├── sdk-python/      Python SDK (`conduit-btc` on PyPI; import `conduit`)
 ├── sdk-js/          TypeScript SDK (`@conduit-btc/sdk` on npm)
-├── mcp-server/      MCP server exposing Conduit as tools to AI agents
+├── mcp-server/      MCP server (`conduit-btc-mcp` on PyPI; `conduit-mcp` command)
 ├── infra/           Bitcoin Core / LND configs, systemd units, install scripts
 ├── docs/            MkDocs documentation site
 ├── docker-compose.yml

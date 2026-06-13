@@ -92,8 +92,8 @@ sending payments — every successful outbound payment settles on **your** node.
 ## Install an SDK
 
 ```bash
-# Python
-pip install conduit-lightning
+# Python  (import as `conduit`)
+pip install conduit-btc
 
 # Node / TypeScript
 npm install @conduit-btc/sdk
