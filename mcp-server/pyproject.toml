@@ -1,6 +1,6 @@
 [project]
 name = "conduit-mcp"
-version = "0.8.3"
+version = "0.8.4"
 description = "MCP server exposing your self-hosted, non-custodial Conduit Lightning instance to any MCP-compatible AI agent"
 readme = "README.md"
 license = { text = "MIT" }

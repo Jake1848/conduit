@@ -5,6 +5,56 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
+## [0.8.4] — Full audit pass, real console pages, agent demo
+
+A comprehensive audit/red-team pass over the whole codebase (money path hardest),
+the five placeholder console pages built for real, and a polished
+agent-pays-over-Lightning demo. No schema changes; api-container-only deploy.
+
+### Security / correctness
+- **Treasury double-spend closed.** A prior "retryable failed send" path reset an
+  ambiguous withdrawal back to `pending`, so a same-key retry after a timeout
+  could broadcast a second on-chain transaction. An ambiguous `send_coins` now
+  resolves to `unknown` and a retry with the same idempotency key 409s — the
+  irreversible broadcast is never re-attempted. Regression test added.
+- **Refunds only on explicit failure.** A payment is refunded (Phase 3a) only when
+  LND reports an explicit `FAILED`; a non-terminal/`UNKNOWN` lookup now raises a
+  generic `LNDError` instead of being mis-classified as failed, so an in-flight or
+  unknown payment is never double-spent by a premature refund.
+- **Treasury liabilities are conservative everywhere.** `pending_outbound` is now
+  included in the liability figure used by the overview, the withdrawable-headroom
+  calc, and the withdrawal solvency guard (previously only some paths).
+- **`/v1/metrics` no longer leaks liquidity to read keys.** Treasury balance,
+  fee revenue, assets/liabilities and the solvency ratio are zeroed/nulled for
+  non-admin scopes; full figures require `admin`.
+- **LND errors no longer leak internals.** Upstream LND failures log a warning and
+  surface a single generic "node is unavailable" message instead of echoing the
+  raw error to the caller.
+- **Input hardening, round two.** Deeply-nested JSON returns `422` (not a `500`);
+  webhook URL + payload-field lengths are bounded; the SSRF guard additionally
+  rejects multicast / reserved / unspecified destination IPs.
+- **SDK replay-safety.** `sdk-js` retries network errors only for replay-safe
+  requests (GET/DELETE or an explicit idempotency key); both SDKs' `Agent.list()`
+  now page the entire fleet instead of the first page.
+- **Ops.** Postgres backups verify their gzip integrity and set S3 SSE; the
+  idempotency pruner never deletes an in-flight (`pending`) record; the reconciler
+  is idempotent (no double refund on a second pass).
+
+### Console
+- The five remaining placeholder pages are now real, admin-gated, and match the
+  existing design system: **Policies** (per-agent limit/allowlist/memo editor),
+  **Webhooks** (CRUD with one-time signing-secret reveal), **Network** (live node
+  health, liquidity breakdown, solvency), **Sandbox** (read-only GET API explorer
+  with an equivalent `curl`), and **Docs** (in-app links to the repo/SDKs/demo).
+- The console disconnects cleanly on `401/403` and surfaces API errors as a toast.
+
+### Docs / demo
+- **`DEMO.md`**: an AI agent that autonomously pays over Lightning and is stopped
+  by its own server-side policy — via MCP + Claude Desktop, or a raw-SDK fallback.
+- `sdk-python/examples/ai_agent_pays_api.py` rewritten as a self-contained,
+  runnable lifecycle; `mcp-server/scripts/smoke_test.py` drives all eight MCP
+  tools through the real stdio protocol and asserts policy enforcement.
+
 ## [0.8.3] — Treasury (owner withdrawals), operator-wide idempotency, input hardening
 
 Owner/admin treasury feature plus a red-team-driven hardening pass. The new

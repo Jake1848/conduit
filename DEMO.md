@@ -59,7 +59,7 @@ shared demo key.
 pip install conduit-mcp
 ```
 
-> Until `conduit-mcp 0.8.3` is published to PyPI you can install from this repo:
+> Until `conduit-mcp 0.8.4` is published to PyPI you can install from this repo:
 > `pip install ./sdk-python ./mcp-server` (installs the SDK it depends on too).
 
 ### Configure Claude Desktop

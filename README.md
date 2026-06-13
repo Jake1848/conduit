@@ -14,11 +14,13 @@ rules. The agents you create are **virtual sub-balances** in a ledger that you,
 the operator, control: they hold a scoped API key, not a signing key, and you
 can credit, debit, or sweep them at any time.
 
-Status: **v0.8.3 — running live on testnet and mainnet** (testnet/regtest plus
+Status: **v0.8.4 — running live on testnet and mainnet** (testnet/regtest plus
 a live mainnet node; the first real mainnet payment has settled end-to-end —
-still early and small, not production-at-scale). v0.8.3 adds an operator
-treasury: see accrued platform-fee revenue and withdraw accrued BTC on-chain,
-gated by a solvency guard (node assets can never drop below what you owe agents).
+still early and small, single-operator, not production-at-scale). The operator
+treasury (added in 0.8.3) lets you see accrued platform-fee revenue and withdraw
+accrued BTC on-chain, gated by a solvency guard (node assets can never drop below
+what you owe agents). 0.8.4 adds a full audit/red-team pass, the complete
+operator console, and an agent-pays-over-Lightning demo (see `DEMO.md`).
 
 - Website: https://conduit.energy
 - Hosted demo API: https://api.conduit.energy (testnet) · https://api-mainnet.conduit.energy (mainnet)
