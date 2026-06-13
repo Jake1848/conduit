@@ -79,6 +79,21 @@ export function fmtRelative(iso: string | null): string {
   return `${day} day${day === 1 ? "" : "s"} ago`;
 }
 
+/** mempool.space tx link, network-aware. Regtest has no public explorer → null. */
+export function explorerTxUrl(network: string, txid: string | null): string | null {
+  if (!txid) return null;
+  if (network === "mainnet") return `https://mempool.space/tx/${txid}`;
+  if (network === "testnet") return `https://mempool.space/testnet/tx/${txid}`;
+  return null;
+}
+
+/** mempool.space address link, network-aware. Regtest → null. */
+export function explorerAddrUrl(network: string, address: string): string | null {
+  if (network === "mainnet") return `https://mempool.space/address/${address}`;
+  if (network === "testnet") return `https://mempool.space/testnet/address/${address}`;
+  return null;
+}
+
 /** Truncate a payment hash to "abcd1234…ef12". */
 export function truncHash(h: string | null): string {
   if (!h) return "—";

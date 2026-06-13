@@ -177,6 +177,25 @@ export interface Health {
   network: string; // regtest | testnet | mainnet
 }
 
+// ---- /v1/status (admin: node health + liquidity) ----
+export interface NodeStatus {
+  env: string;
+  network: string;
+  node: {
+    alias: string;
+    pubkey: string;
+    block_height: number;
+    synced_to_chain: boolean;
+  };
+  balance: {
+    confirmed_sats: number;
+    unconfirmed_sats: number;
+    channel_local_sats: number;
+    channel_remote_sats: number;
+  };
+  channels: { num_active: number };
+}
+
 export interface Webhook {
   id: string;
   url: string;

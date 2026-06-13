@@ -12,6 +12,7 @@ import type {
   Invoice,
   LedgerResult,
   Metrics,
+  NodeStatus,
   Policy,
   Scope,
   Transaction,
@@ -182,6 +183,9 @@ export const api = {
 
   // ---- platform-fee revenue (admin-scope key required) ----
   getFees: (signal?: AbortSignal) => request<Fees>("/v1/fees", { signal }),
+
+  // ---- node status (admin: sync + channels + liquidity) ----
+  getStatus: (signal?: AbortSignal) => request<NodeStatus>("/v1/status", { signal }),
 
   // ---- treasury: revenue + node liquidity + solvency + on-chain withdrawal (admin) ----
   getTreasury: (signal?: AbortSignal) =>
