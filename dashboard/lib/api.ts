@@ -232,10 +232,15 @@ export const api = {
       max_per_transaction?: number | null;
       max_per_hour?: number | null;
       max_per_day?: number | null;
+      max_per_minute_count?: number | null;
       allowlist?: string[];
       blocklist?: string[];
+      require_memo?: boolean;
+      enabled?: boolean;
     },
   ) => request<Policy>(`/v1/agents/${id}/policy`, { method: "POST", body }),
+  deletePolicy: (id: string) =>
+    request<void>(`/v1/agents/${id}/policy`, { method: "DELETE" }),
 
   // ---- invoices ----
   createInvoice: (agentId: string, amount: number, memo?: string) =>

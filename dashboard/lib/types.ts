@@ -35,6 +35,11 @@ export interface Metrics {
   // Platform-fee revenue (the operator's per-transaction earnings, in sats).
   fee_revenue_total_sats: number;
   fee_revenue_today_sats: number;
+  // Solvency (admin-only; zeroed/nulled for non-admin read keys server-side).
+  liabilities_sats?: number;
+  assets_sats?: number;
+  solvency_ratio?: number | null;
+  solvent?: boolean;
 }
 
 // ---- /v1/fees (platform-fee revenue; requires an admin-scope key) ----
@@ -201,6 +206,8 @@ export interface Webhook {
   url: string;
   events: string[];
   active: boolean;
+  secret?: string | null; // returned ONCE at creation (whsec_…), null on list
+  created_at?: string;
 }
 
 /** Access tier the connected key has, derived from probing the API. */

@@ -49,7 +49,7 @@ export function Sidebar() {
   const developer: NavItem[] = [
     { id: "keys", label: "API Keys", href: "/keys", icon: KeyRound, adminOnly: true },
     { id: "sandbox", label: "Sandbox", href: "/sandbox", icon: Box },
-    { id: "docs", label: "Docs", href: "/docs", icon: FileText, ext: true },
+    { id: "docs", label: "Docs", href: "/docs", icon: FileText },
   ];
 
   const isActive = (href: string) =>
