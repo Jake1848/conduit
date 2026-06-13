@@ -1,6 +1,6 @@
 [project]
 name = "conduit-lightning"
-version = "0.8.2"
+version = "0.8.3"
 description = "Self-hosted, non-custodial Bitcoin Lightning payments for autonomous AI agents — your node, your keys, your rules."
 readme = "README.md"
 license = { text = "MIT" }
