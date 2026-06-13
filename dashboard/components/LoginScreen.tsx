@@ -5,6 +5,9 @@ import { ArrowRight, KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { getStoredKey, getStoredApiUrl, DEFAULT_API_BASE } from "@/lib/api";
 
+const REGTEST_URL = "https://api-test.conduit.energy";
+const REGTEST_KEY = "ck_test_regtest_root_key";
+
 export function LoginScreen() {
   const { connect, error } = useAuth();
   const [key, setKey] = useState(getStoredKey() || "");
@@ -79,9 +82,29 @@ export function LoginScreen() {
 
         <div className="login-hint">
           Point at your own instance — e.g. https://api-mainnet.conduit.energy (mainnet),
-          https://api.conduit.energy (testnet), or http://localhost:8000 (local dev).
+          https://api.conduit.energy (testnet), https://api-test.conduit.energy (regtest
+          sandbox), or http://localhost:8000 (local dev). The key must be from the SAME
+          instance — a regtest key won&apos;t work against the testnet URL.
           <br />
-          regtest sandbox key: ck_test_regtest_root_key
+          <button
+            type="button"
+            onClick={() => {
+              setApiUrl(REGTEST_URL);
+              setKey(REGTEST_KEY);
+            }}
+            style={{
+              marginTop: 8,
+              background: "none",
+              border: "none",
+              padding: 0,
+              color: "var(--gold)",
+              cursor: "pointer",
+              textDecoration: "underline",
+              font: "inherit",
+            }}
+          >
+            ↳ Use the regtest sandbox (fills api-test URL + demo key)
+          </button>
         </div>
       </form>
     </div>
