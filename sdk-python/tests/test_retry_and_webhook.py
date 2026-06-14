@@ -199,6 +199,78 @@ def test_empty_retry_after_falls_back_to_exponential(_no_sleep):
     assert _no_sleep == [1.0]  # exponential, not an instant 0-delay retry
 
 
+# ---------- replay-safety: unkeyed writes must NOT auto-retry ----------
+
+def test_unkeyed_post_not_retried_on_network_error(_no_sleep):
+    """An UNKEYED POST (no Idempotency-Key) must NOT be retried on a network
+    error — the server may already have applied it, so a replay could
+    double-credit/charge. Only one attempt, then raise."""
+    def responder(request, n):
+        raise httpx.ConnectError("connection refused", request=request)
+
+    t = Recorder(responder)
+    c = _make_client(t, max_retries=3, retry_backoff_base=0.0)
+    with pytest.raises(ConduitError):
+        c.post("/v1/agents/agt_1/credit", json={"sats": 1000})  # no idempotency_key
+    assert len(t.requests) == 1  # exactly one attempt — no replay
+
+
+def test_unkeyed_post_not_retried_on_5xx(_no_sleep):
+    """An UNKEYED POST that gets a 5xx must NOT be retried (it may have been
+    processed before the error surfaced)."""
+    def responder(request, n):
+        return httpx.Response(503, json={"detail": {"detail": "unavailable"}})
+
+    t = Recorder(responder)
+    c = _make_client(t, max_retries=3, retry_backoff_base=0.0)
+    with pytest.raises(ConduitError):
+        c.post("/v1/agents/agt_1/credit", json={"sats": 1000})
+    assert len(t.requests) == 1
+
+
+def test_unkeyed_post_still_retried_on_429(_no_sleep):
+    """429 is always safe to retry even without a key: the server rejected the
+    request before doing any work."""
+    def responder(request, n):
+        if n == 1:
+            return httpx.Response(
+                429, headers={"Retry-After": "0"},
+                json={"detail": {"code": "RATE_LIMITED", "detail": "slow"}},
+            )
+        return httpx.Response(200, json={"ok": True})
+
+    t = Recorder(responder)
+    c = _make_client(t, retry_backoff_base=0.0)
+    c.post("/v1/agents/agt_1/credit", json={"sats": 1000})  # no key
+    assert len(t.requests) == 2  # retried the 429
+
+
+def test_keyed_post_is_retried_on_5xx(_no_sleep):
+    """A POST WITH an Idempotency-Key stays retry-safe on 5xx (server dedupes)."""
+    def responder(request, n):
+        if n == 1:
+            return httpx.Response(503, json={"detail": {"detail": "x"}})
+        return httpx.Response(200, json={"ok": True})
+
+    t = Recorder(responder)
+    c = _make_client(t, retry_backoff_base=0.0)
+    c.post("/v1/agents/agt_1/credit", json={"sats": 1000}, idempotency_key="k1")
+    assert len(t.requests) == 2  # keyed → safe to retry
+
+
+def test_get_is_retried_without_key(_no_sleep):
+    """GET is replay-safe by definition — retried on 5xx even with no key."""
+    def responder(request, n):
+        if n == 1:
+            return httpx.Response(500, json={"detail": {"detail": "x"}})
+        return httpx.Response(200, json={"ok": True})
+
+    t = Recorder(responder)
+    c = _make_client(t, retry_backoff_base=0.0)
+    c._request("GET", "/v1/agents")
+    assert len(t.requests) == 2
+
+
 # ---------- idempotency key auto-generation via Agent ----------
 
 @pytest.fixture

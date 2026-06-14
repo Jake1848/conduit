@@ -1,7 +1,7 @@
 # Python SDK
 
 ```bash
-pip install conduit-sdk
+pip install conduit-btc
 ```
 
 ## Configure

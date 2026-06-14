@@ -35,11 +35,13 @@ Restart Claude. You'll see `conduit` tools in the tool picker.
 | tool | purpose |
 | ---- | ------- |
 | `conduit_create_wallet`  | provision a new agent wallet with a daily limit |
+| `conduit_credit`         | fund an agent wallet from operator node liquidity |
 | `conduit_attach_policy`  | configure spending controls |
 | `conduit_balance`        | read current balance |
 | `conduit_pay`            | send to a Lightning address or BOLT11 |
 | `conduit_receive`        | generate an invoice for inbound funds |
 | `conduit_transactions`   | list recent transactions |
+| `conduit_fees`           | report the operator's platform-fee revenue |
 
 ## Why the AI can't escape the policy
 

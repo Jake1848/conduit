@@ -89,8 +89,8 @@ Collected fees are reported at `GET /v1/fees` (admin) and surfaced in
 ## Quickstart (local, mock LND)
 
 ```bash
-# 1. Bring up the API in mock mode
-docker compose up --build
+# 1. Bring up the API in mock mode (LND_MOCK=true, SQLite, bootstrap key preset)
+docker compose -f docker-compose.dev.yml up --build
 
 # 2. Hit the API
 curl http://localhost:8000/v1/health

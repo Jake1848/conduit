@@ -9,14 +9,14 @@ Bitcoin moves until you point Conduit at an LND node of your own.
 ```bash
 git clone https://github.com/Jake1848/conduit.git
 cd conduit
-docker compose up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 Verify it's up:
 
 ```bash
 curl http://localhost:8000/v1/health
-# {"ok":true,"version":"0.7.0","network":"testnet"}
+# {"ok":true,"version":"0.8.4","network":"testnet"}
 ```
 
 The dev container ships with `LND_MOCK=true` and a bootstrap admin key
@@ -28,11 +28,11 @@ set your own via `BOOTSTRAP_API_KEY`.
 
 === "Python"
     ```bash
-    pip install conduit-sdk
+    pip install conduit-btc
     ```
 === "TypeScript"
     ```bash
-    npm i @conduit/sdk
+    npm i @conduit-btc/sdk
     ```
 
 ## 3. Make a payment
@@ -54,7 +54,7 @@ set your own via `BOOTSTRAP_API_KEY`.
     process.env.CONDUIT_API_KEY = "ck_test_dev_root";
     process.env.CONDUIT_API_URL = "http://localhost:8000";
 
-    import { Agent } from '@conduit/sdk';
+    import { Agent } from '@conduit-btc/sdk';
 
     const agent = await Agent.create({ name: 'hello-world', dailyLimit: 10_000 });
     const r = await agent.keysend('02' + 'aa'.repeat(32), 100, 'hi');

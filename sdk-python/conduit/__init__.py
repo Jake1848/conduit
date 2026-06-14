@@ -33,7 +33,7 @@ from .webhook import parse_webhook, verify_webhook
 api_key: str | None = None
 base_url: str | None = None
 
-__version__ = "0.8.4"
+__version__ = "0.8.5"
 
 __all__ = [
     "Agent",

@@ -1,7 +1,7 @@
-// npm i @conduit/sdk
+// npm i @conduit-btc/sdk
 // CONDUIT_API_KEY=ck_test_... node --experimental-strip-types quickstart.ts
 
-import { Agent } from "@conduit/sdk";
+import { Agent } from "@conduit-btc/sdk";
 
 const agent = await Agent.create({
   name: "compute-router-7",

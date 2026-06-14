@@ -2,9 +2,11 @@
 
 Adds two production-grade behaviors over a plain httpx client:
 
-  * Automatic retries with exponential backoff on transient failures
-    (HTTP 429, 5xx, and network/timeout errors). `Retry-After` is honored
-    when the server provides it. 4xx other than 429 are never retried.
+  * Automatic retries with exponential backoff on transient failures, gated by
+    replay-safety: GET/DELETE and any request carrying an Idempotency-Key are
+    retried on 5xx and network/timeout errors; an UNKEYED write is NOT (a replay
+    could double-apply it). 429 is always retried (the server did no work).
+    `Retry-After` is honored. 4xx other than 429 are never retried.
 
   * Idempotency-Key support. Payment methods generate a UUID4 key and pass
     it through; the retry loop reuses the SAME key across attempts so a
@@ -109,14 +111,23 @@ class Conduit:
         if extra_headers:
             kw = {**kw, "headers": {**kw.get("headers", {}), **extra_headers}}
 
+        # A request may only be auto-retried if replaying it can't double-apply a
+        # side effect: GET/DELETE are idempotent by definition, and any request
+        # carrying an Idempotency-Key dedupes server-side. An UNKEYED POST/PATCH
+        # (e.g. credit/receive/debit without a key) is NOT replay-safe — a network
+        # error or 5xx may have already been processed, so retrying could
+        # double-credit/charge. 429 is always safe: the server rejected it before
+        # doing any work.
+        replay_safe = method in ("GET", "DELETE") or idempotency_key is not None
+
         attempt = 0
         while True:
             try:
                 r = self._client.request(method, path, **kw)
             except httpx.HTTPError as e:
-                # Network/timeout error — no response. Safe to retry because
-                # payment requests carry an idempotency key.
-                if attempt < self.max_retries:
+                # Network/timeout error — no response, so we can't know whether the
+                # server applied it. Only retry when it's replay-safe.
+                if replay_safe and attempt < self.max_retries:
                     self._sleep_backoff(attempt, None)
                     attempt += 1
                     continue
@@ -125,7 +136,10 @@ class Conduit:
                 ) from e
 
             if r.status_code >= 400:
-                if _is_retryable_status(r.status_code) and attempt < self.max_retries:
+                retryable = r.status_code == 429 or (
+                    _is_retryable_status(r.status_code) and replay_safe
+                )
+                if retryable and attempt < self.max_retries:
                     self._sleep_backoff(attempt, r.headers.get("Retry-After"))
                     attempt += 1
                     continue

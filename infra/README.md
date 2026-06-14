@@ -96,8 +96,17 @@ AWS_ENDPOINT_URL=https://fsn1.your-objectstorage.com \
 bash scripts/backup_postgres_to_s3.sh
 ```
 
-Periodically restore a dump into a throwaway database to confirm the backups
-are actually usable.
+Periodically confirm the backups are actually restorable — a backup you've never
+restored is a guess. `scripts/restore_test.sh` does exactly that: it restores the
+newest dump into a throwaway database, asserts the ledger tables are present
+(agents/api_keys/transactions), reports their row counts, and drops the throwaway
+DB. Exit 0 means the backup is proven; run it monthly next to the backup job:
+
+```bash
+bash scripts/restore_test.sh
+# or against another stack:  COMPOSE_FILE=… PG_SERVICE=… PG_PASSWORD=… bash scripts/restore_test.sh
+# monthly cron:  0 5 1 * * bash /home/conduit/conduit/infra/scripts/restore_test.sh
+```
 
 ### Scheduled off-box backups + dead-man's switch
 

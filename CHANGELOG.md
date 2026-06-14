@@ -5,6 +5,33 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
+## [0.8.5] — Python SDK replay-safety (parity with JS); docs/onboarding fixes
+
+A post-release production-readiness pass (multi-agent audit + adversarial verify).
+SDK-only patch — the Core API is unchanged and stays at 0.8.4.
+
+### Security / correctness
+- **Python SDK (`conduit-btc`) no longer auto-retries un-idempotent writes.** The
+  client retried POSTs on network errors and 5xx unconditionally; an *unkeyed*
+  write (`credit`/`receive`/`debit` without an Idempotency-Key) could therefore
+  be **double-applied** on a retry. Retries are now gated on replay-safety —
+  GET/DELETE or a request carrying an Idempotency-Key — matching the JS SDK's M8
+  fix. 429 is still always retried (the server did no work). Regression tests added.
+
+### Ops / DR
+- **`infra/scripts/restore_test.sh`** — restores the newest backup into a
+  throwaway database, asserts the ledger tables are present, and drops it; turns
+  "backups exist" into "backups are proven restorable." Verified end-to-end
+  (759k-row regtest DB restored cleanly). Wire it as a monthly cron next to the
+  backup job.
+
+### Docs
+- Fixed wrong install names that slipped past the 0.8.4 rename in the docs site
+  (`conduit-sdk`→`conduit-btc`, `@conduit/sdk`→`@conduit-btc/sdk`); corrected the
+  local-quickstart to `docker compose -f docker-compose.dev.yml up` (the bare
+  command boots the production stack); completed the 8-tool MCP table; refreshed
+  stale version strings and the JS client User-Agent.
+
 ## [0.8.4] — Full audit pass, real console pages, agent demo
 
 A comprehensive audit/red-team pass over the whole codebase (money path hardest),

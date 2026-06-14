@@ -11,7 +11,7 @@ import { ConduitError } from "./errors.js";
  * you created the webhook. Always verify on the raw body, before any JSON
  * re-serialization.
  *
- *   import { parseWebhook } from "@conduit/sdk";
+ *   import { parseWebhook } from "@conduit-btc/sdk";
  *
  *   const event = parseWebhook(rawBody, req.headers["x-conduit-signature"], SECRET);
  *   // event == { event: "payment.settled", data: {...}, ts: ... }

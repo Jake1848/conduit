@@ -109,7 +109,7 @@ export class Conduit {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": "conduit-js/0.1.0",
+      "User-Agent": "conduit-js/0.8.4",
     };
     if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
 

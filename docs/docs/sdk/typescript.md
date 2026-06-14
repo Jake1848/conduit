@@ -1,11 +1,11 @@
 # TypeScript SDK
 
 ```bash
-npm i @conduit/sdk
+npm i @conduit-btc/sdk
 ```
 
 ```ts
-import { Agent } from '@conduit/sdk';
+import { Agent } from '@conduit-btc/sdk';
 
 const agent = await Agent.create({
   name: 'compute-router-7',
@@ -32,7 +32,7 @@ Reads `CONDUIT_API_KEY` and `CONDUIT_API_URL` from the environment by
 default. To configure explicitly:
 
 ```ts
-import { Conduit, setDefaultClient } from '@conduit/sdk';
+import { Conduit, setDefaultClient } from '@conduit-btc/sdk';
 
 setDefaultClient(
   new Conduit({
@@ -66,7 +66,7 @@ Same behavior as the Python SDK:
 - Up to `maxRetries` retries (default **3** → 4 total attempts).
 
 ```ts
-import { Conduit, setDefaultClient } from '@conduit/sdk';
+import { Conduit, setDefaultClient } from '@conduit-btc/sdk';
 
 setDefaultClient(new Conduit({ maxRetries: 5 })); // or 0 to disable
 ```
@@ -93,7 +93,7 @@ Reusing a key with a **different** body throws a `ConduitError`
 
 ```ts
 import express from 'express';
-import { parseWebhook, WebhookVerificationError } from '@conduit/sdk';
+import { parseWebhook, WebhookVerificationError } from '@conduit-btc/sdk';
 
 const app = express();
 const WEBHOOK_SECRET = 'whsec_...'; // secret returned when you created the webhook
@@ -129,7 +129,7 @@ Node's `crypto.timingSafeEqual` for a constant-time comparison.
 ## Errors
 
 ```ts
-import { PolicyViolation } from '@conduit/sdk';
+import { PolicyViolation } from '@conduit-btc/sdk';
 
 try {
   await agent.pay({ to, sats });
