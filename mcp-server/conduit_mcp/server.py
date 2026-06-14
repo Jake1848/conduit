@@ -13,7 +13,8 @@ Tools and the API-key scope each one requires (scopes are enforced server-side):
   conduit_credit          — fund an agent wallet from your node's liquidity    [admin]
   conduit_attach_policy   — configure spending controls on a wallet           [admin]
   conduit_balance         — check current balance                             [read]
-  conduit_pay             — send a payment (Lightning address or BOLT11)       [write]
+  conduit_pay             — send a payment (Lightning address, BOLT11, or       [write]
+                            raw node pubkey via keysend)
   conduit_receive         — generate an invoice for inbound funds             [write]
   conduit_transactions    — list recent transactions                          [read]
   conduit_fees            — report the operator's platform-fee revenue        [admin]
@@ -137,9 +138,14 @@ async def list_tools() -> list[types.Tool]:
         types.Tool(
             name="conduit_pay",
             description=(
-                "Send a Bitcoin Lightning payment from an agent wallet to a "
-                "Lightning address (name@host) or a BOLT11 invoice. "
-                "Requires a WRITE-scope (or higher) API key. "
+                "Send a Bitcoin Lightning payment from an agent wallet. The `to` "
+                "destination may be any of THREE formats, auto-detected:\n"
+                "  • a Lightning address — name@host\n"
+                "  • a BOLT11 invoice — lnbc.../lntb.../lnbcrt...\n"
+                "  • a raw 66-hex-char node pubkey (02/03 prefix) — sent as keysend\n"
+                "Requires a WRITE-scope (or higher) API key. The payment is gated by "
+                "the agent's spending policy server-side: an over-limit payment is "
+                "rejected (e.g. PER_TRANSACTION_LIMIT_EXCEEDED) before any funds move. "
                 "Idempotent: a re-invoked call with the same agent, destination, "
                 "amount and memo is deduplicated server-side and will NOT send "
                 "twice, so a retried tool call is safe. Pass a distinct memo (or "
@@ -150,7 +156,13 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["agent", "to", "sats"],
                 "properties": {
                     "agent": {"type": "string"},
-                    "to": {"type": "string"},
+                    "to": {
+                        "type": "string",
+                        "description": (
+                            "Lightning address (name@host), BOLT11 invoice, or a "
+                            "raw 66-hex node pubkey (keysend)."
+                        ),
+                    },
                     "sats": {"type": "integer", "minimum": 1},
                     "memo": {"type": "string"},
                     "idempotency_key": {
@@ -223,6 +235,26 @@ def _pay_idempotency_key(agent_id: str, to: str, sats: int, memo: str | None) ->
     return "mcp-" + hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _looks_like_pubkey(to: str) -> bool:
+    """True for a bare compressed node pubkey (a keysend destination): exactly 66
+    hex chars with an 02/03 prefix.
+
+    These route to keysend (the SDK's `agent.keysend`, i.e. `/v1/payments/send`).
+    Everything else — `name@host` Lightning addresses and BOLT11 invoices — routes
+    to `agent.pay` (`/v1/payments/pay`). A MALFORMED pubkey does not match here, so
+    it falls through to the invoice path, which still rejects it as INVALID_INPUT
+    *before* any debit — so the stranded-funds protection is never bypassed.
+    """
+    s = to.strip()
+    if len(s) != 66 or s[:2] not in ("02", "03"):
+        return False
+    try:
+        bytes.fromhex(s)
+        return True
+    except ValueError:
+        return False
+
+
 def _ok(payload: dict[str, Any]) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=json.dumps(payload, default=str, indent=2))]
 
@@ -282,15 +314,29 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
             memo = args.get("memo")
             # Make tool-call retries safe: derive a stable key unless the caller
             # gave one, so a re-invoked conduit_pay can't double-send.
+            to = args["to"]
             idem = args.get("idempotency_key") or _pay_idempotency_key(
-                agent.id, args["to"], sats, memo
+                agent.id, to, sats, memo
             )
-            receipt = agent.pay(
-                to=args["to"],
-                sats=sats,
-                memo=memo,
-                idempotency_key=idem,
-            )
+            # Route by destination format. A bare node pubkey is a keysend; a
+            # Lightning address / BOLT11 goes through the address-or-invoice path.
+            # Both run the SAME server-side policy + debit/refund flow, so a valid
+            # destination that violates a spending policy is rejected by the POLICY
+            # engine (e.g. PER_TRANSACTION_LIMIT_EXCEEDED), not input validation.
+            if _looks_like_pubkey(to):
+                receipt = agent.keysend(
+                    dest_pubkey=to,
+                    sats=sats,
+                    memo=memo,
+                    idempotency_key=idem,
+                )
+            else:
+                receipt = agent.pay(
+                    to=to,
+                    sats=sats,
+                    memo=memo,
+                    idempotency_key=idem,
+                )
             return _ok({
                 "id": receipt.id,
                 "status": receipt.status,
@@ -365,7 +411,7 @@ async def serve_stdio() -> None:
             write,
             InitializationOptions(
                 server_name="conduit",
-                server_version="0.8.5",
+                server_version="0.8.6",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},

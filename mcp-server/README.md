@@ -57,7 +57,7 @@ lower ones).
 | `conduit_credit`        | Fund an agent wallet from operator node liquidity (sats) | `admin` |
 | `conduit_attach_policy` | Set spending controls: per-tx, hourly, daily, allow/blocklist | `admin` |
 | `conduit_balance`       | Read current balance | `read` |
-| `conduit_pay`           | Send to a Lightning address (`name@host`) or BOLT11 invoice | `write` |
+| `conduit_pay`           | Send to a Lightning address (`name@host`), BOLT11 invoice, or raw node pubkey (keysend) | `write` |
 | `conduit_receive`       | Generate an invoice for inbound payment | `write` |
 | `conduit_transactions`  | List recent transactions | `read` |
 | `conduit_fees`          | Report this operator's platform-fee revenue (sats) | `admin` |

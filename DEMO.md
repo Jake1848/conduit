@@ -125,6 +125,12 @@ you the JSON it gets back.
    `PER_TRANSACTION_LIMIT_EXCEEDED — Payment of 20000 sats exceeds per-transaction
    limit of 10000 sats.` The model cannot talk its way past the policy.
 
+   > The same policy check applies to **any** destination `conduit_pay` accepts —
+   > a Lightning address (`name@host`), a BOLT11 invoice, or a raw node pubkey
+   > (sent as keysend). The format is auto-detected; a valid-but-over-limit
+   > destination is rejected by the policy engine, and a *malformed* one is
+   > rejected up front before any funds move.
+
 6. **Show the receipts**
    > Show demo-agent's recent transactions and the operator's fee revenue.
 
@@ -141,7 +147,7 @@ That's the whole story: **autonomy with a hard, server-side leash.**
 | `conduit_credit` | Fund a wallet from operator node liquidity | `admin` |
 | `conduit_attach_policy` | Set per-tx / hourly / daily / allow- / blocklist / memo rules | `admin` |
 | `conduit_balance` | Read a wallet's balance | `read` |
-| `conduit_pay` | Pay a Lightning address or BOLT11 invoice | `write` |
+| `conduit_pay` | Pay a Lightning address, BOLT11 invoice, or raw node pubkey (keysend) | `write` |
 | `conduit_receive` | Mint an invoice to receive | `write` |
 | `conduit_transactions` | List recent transactions | `read` |
 | `conduit_fees` | Operator's platform-fee revenue | `admin` |

@@ -5,6 +5,23 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
+## [0.8.6] — MCP `conduit_pay` accepts raw pubkeys (keysend)
+
+MCP-server-only patch (`conduit-btc-mcp` → 0.8.6). Core API + SDKs unchanged.
+
+- **`conduit_pay` now routes a raw node pubkey to keysend.** The tool previously
+  sent every `to` through the address/BOLT11 path (`/v1/payments/pay`), so a bare
+  66-hex pubkey was rejected as `Unsupported destination format` at input
+  validation — *before* the policy engine — even though the Core API and SDK have
+  always supported keysend (the first mainnet payment was one). The handler now
+  auto-detects the format: a valid compressed pubkey (02/03 prefix) → `keysend`,
+  otherwise → the address/invoice path. A valid-but-over-limit destination now
+  reaches the policy engine (e.g. `PER_TRANSACTION_LIMIT_EXCEEDED`); a **malformed**
+  destination is still rejected up front before any debit (the stranded-funds
+  protection is preserved). Tool description + inputSchema updated to list all
+  three accepted formats. Unit + stdio regression tests added; verified live on
+  regtest.
+
 ## [0.8.5] — Pre-launch hardening pass (config safety, MCP idempotency, validation)
 
 Two production-readiness audits (multi-agent, adversarially verified) found no
