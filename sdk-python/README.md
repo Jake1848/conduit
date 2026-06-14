@@ -38,6 +38,9 @@ agent.policy.attach(
     allowlist=["02beef..."],
 )
 
+# Fund the agent from your node's liquidity (operator/admin action)
+agent.credit(1_000)
+
 # Send a Lightning payment
 receipt = agent.pay(
     to="compute-node-7@lnd.example.com",

@@ -38,6 +38,9 @@ await agent.policy.attach({
   allowlist: ['02beef...'],
 });
 
+// Fund the agent from your node's liquidity (operator/admin action)
+await agent.credit(1_000);
+
 // Send a Lightning payment
 const receipt = await agent.pay({
   to: 'compute-node-7@lnd.example.com',
