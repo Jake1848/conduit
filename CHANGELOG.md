@@ -5,18 +5,47 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
-## [0.8.5] — Python SDK replay-safety (parity with JS); docs/onboarding fixes
+## [0.8.5] — Pre-launch hardening pass (config safety, MCP idempotency, validation)
 
-A post-release production-readiness pass (multi-agent audit + adversarial verify).
-SDK-only patch — the Core API is unchanged and stays at 0.8.4.
+Two production-readiness audits (multi-agent, adversarially verified) found no
+BLOCKER; this closes the highest-value findings across core, the MCP server, and
+the SDKs. Core + MCP move to 0.8.5; the Python SDK already shipped its part at 0.8.5.
 
 ### Security / correctness
-- **Python SDK (`conduit-btc`) no longer auto-retries un-idempotent writes.** The
-  client retried POSTs on network errors and 5xx unconditionally; an *unkeyed*
-  write (`credit`/`receive`/`debit` without an Idempotency-Key) could therefore
-  be **double-applied** on a retry. Retries are now gated on replay-safety —
-  GET/DELETE or a request carrying an Idempotency-Key — matching the JS SDK's M8
-  fix. 429 is still always retried (the server did no work). Regression tests added.
+- **Refuse to boot the mock LND in production / on mainnet.** `validate_for_runtime()`
+  now hard-fails if `LND_MOCK=true` in production or on the mainnet network — the
+  mock fabricates SUCCEEDED settlements and a solvent balance, so a misconfigured
+  boot could "pay out" real funds that never left the node. Regression tests prove
+  the bad boot is rejected and a correct one is not.
+- **MCP `conduit_pay` is now idempotent.** The tool sent without an idempotency key,
+  so a re-invoked tool call (model/transport retry) would send a SECOND real
+  payment. It now derives a stable key from (agent, destination, amount, memo) —
+  or accepts an explicit `idempotency_key` — so a retry deduplicates server-side.
+  Proven end-to-end: two identical calls debit once and return the same tx; a
+  distinct payment still goes through.
+- **Malformed keysend `dest_pubkey` is rejected (422) before any debit.** A bad
+  pubkey previously debited the agent and *then* errored, stranding funds in
+  `needs_reconciliation` for a payment that never left the node.
+- **LNURL-pay responses are parsed defensively.** A malicious lightning-address
+  host returning non-JSON / a JSON array / bad numerics / a missing callback now
+  yields a clean `PaymentFailed` instead of an uncaught 500.
+- **Solvency liability includes the platform fee.** The conservative
+  `pending_outbound` sum now adds `platform_fee_sats`, so it equals exactly what a
+  concurrent refund restores — closing a tiny withdraw-vs-refund solvency gap.
+- **Python SDK (`conduit-btc`) replay-safety** (shipped in 0.8.5): unkeyed writes
+  are no longer auto-retried on network/5xx — matching the JS SDK's M8 fix.
+
+### Ops / DR
+- **Static Channel Backups must go off-box.** `backup_channels.sh` now *fails loud*
+  (non-zero) unless an off-box destination (scp/s3/rclone) is configured, actually
+  performs the replication, and supports a dead-man's-switch ping — a SCB kept only
+  on the VPS it protects is no backup at all.
+- **`infra/scripts/alert_check.sh`** (new) — minimal on-box alerting that scrapes
+  the internal `/metrics` and pages on insolvency (`conduit_solvent=0`), LND
+  chain-desync, or a stale money-path worker. Operator wires the pager URL.
+- **`infra/scripts/restore_test.sh`** — restores the newest backup into a throwaway
+  database, asserts the ledger tables, and drops it; turns "backups exist" into
+  "backups are proven restorable." Verified end-to-end (759k-row regtest restore).
 
 ### Ops / DR
 - **`infra/scripts/restore_test.sh`** — restores the newest backup into a

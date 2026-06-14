@@ -136,6 +136,22 @@ class Settings(BaseSettings):
                     "SQLite is not supported in production. Use Postgres: "
                     "DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/conduit"
                 )
+            if self.lnd_mock:
+                # The mock LND reports synced + a fabricated balance and returns
+                # SUCCEEDED for every outbound payment. Booting production against
+                # it would mint a real admin key and "settle" payouts that never
+                # leave the node, while the solvency monitor trusts the fake
+                # balance. Fail closed — a real node is mandatory in production.
+                errors.append(
+                    "LND_MOCK must be false in production. The mock node fabricates "
+                    "settlements and a solvent balance; point LND_REST_URL at a real node."
+                )
+        # Mainnet is real money regardless of CONDUIT_ENV — never run it on the mock.
+        if self.network == "mainnet" and self.lnd_mock:
+            errors.append(
+                "LND_MOCK must be false on the mainnet network — refusing to run a "
+                "real-money network against the mock node."
+            )
         return errors
 
 

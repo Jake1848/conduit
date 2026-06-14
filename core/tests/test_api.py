@@ -53,7 +53,7 @@ async def test_create_agent_attach_policy_and_pay(client):
 
     r = await client.post(
         f"/v1/agents/{agent_id}/policy",
-        json={"max_per_hour": 10_000, "allowlist": ["02beef" + "00" * 31]},
+        json={"max_per_hour": 10_000, "allowlist": ["02" + "be" * 32]},
     )
     assert r.status_code == 201, r.text
 
@@ -62,7 +62,7 @@ async def test_create_agent_attach_policy_and_pay(client):
         "/v1/payments/send",
         json={
             "agent_id": agent_id,
-            "dest_pubkey": "02dead" + "00" * 31,
+            "dest_pubkey": "02" + "de" * 32,
             "sats": 150,
             "memo": "dataset query",
         },
@@ -75,7 +75,7 @@ async def test_create_agent_attach_policy_and_pay(client):
         "/v1/payments/send",
         json={
             "agent_id": agent_id,
-            "dest_pubkey": "02beef" + "00" * 31,
+            "dest_pubkey": "02" + "be" * 32,
             "sats": 150,
             "memo": "dataset query",
         },
@@ -287,4 +287,55 @@ async def test_production_requires_postgres(monkeypatch):
     reset_settings_cache()
     errs = Settings().validate_for_runtime()
     assert any("SQLite" in e for e in errs), errs
+    reset_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_production_refuses_lnd_mock(monkeypatch):
+    """A production boot against the MOCK LND must be rejected — the mock
+    fabricates SUCCEEDED settlements and a solvent balance (phantom payouts)."""
+    from conduit_core.config import Settings, reset_settings_cache
+
+    monkeypatch.setenv("CONDUIT_ENV", "production")
+    monkeypatch.setenv("CONDUIT_NETWORK", "mainnet")
+    monkeypatch.setenv("API_SECRET_KEY", "x" * 64)
+    monkeypatch.setenv("BOOTSTRAP_API_KEY", "ck_live_" + "x" * 32)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x/y")
+    monkeypatch.setenv("LND_MOCK", "true")
+    reset_settings_cache()
+    errs = Settings().validate_for_runtime()
+    assert any("LND_MOCK" in e for e in errs), errs
+    reset_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_mainnet_refuses_lnd_mock_even_in_dev(monkeypatch):
+    """Mainnet is real money regardless of CONDUIT_ENV — the mock is rejected
+    even when CONDUIT_ENV is not 'production'."""
+    from conduit_core.config import Settings, reset_settings_cache
+
+    monkeypatch.setenv("CONDUIT_ENV", "development")
+    monkeypatch.setenv("CONDUIT_NETWORK", "mainnet")
+    monkeypatch.setenv("LND_MOCK", "true")
+    reset_settings_cache()
+    errs = Settings().validate_for_runtime()
+    assert any("mainnet" in e and "LND_MOCK" in e for e in errs), errs
+    reset_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_production_with_real_lnd_has_no_mock_error(monkeypatch):
+    """The guard is specific: a correct production config (LND_MOCK=false) does
+    NOT raise the LND_MOCK error."""
+    from conduit_core.config import Settings, reset_settings_cache
+
+    monkeypatch.setenv("CONDUIT_ENV", "production")
+    monkeypatch.setenv("CONDUIT_NETWORK", "mainnet")
+    monkeypatch.setenv("API_SECRET_KEY", "x" * 64)
+    monkeypatch.setenv("BOOTSTRAP_API_KEY", "ck_live_" + "x" * 32)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x/y")
+    monkeypatch.setenv("LND_MOCK", "false")
+    reset_settings_cache()
+    errs = Settings().validate_for_runtime()
+    assert not any("LND_MOCK" in e for e in errs), errs
     reset_settings_cache()

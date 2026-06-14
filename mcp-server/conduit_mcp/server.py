@@ -30,6 +30,7 @@ Required env (point these at YOUR self-hosted Conduit instance):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 from typing import Any
@@ -138,7 +139,11 @@ async def list_tools() -> list[types.Tool]:
             description=(
                 "Send a Bitcoin Lightning payment from an agent wallet to a "
                 "Lightning address (name@host) or a BOLT11 invoice. "
-                "Requires a WRITE-scope (or higher) API key."
+                "Requires a WRITE-scope (or higher) API key. "
+                "Idempotent: a re-invoked call with the same agent, destination, "
+                "amount and memo is deduplicated server-side and will NOT send "
+                "twice, so a retried tool call is safe. Pass a distinct memo (or "
+                "an explicit idempotency_key) for a genuinely separate payment."
             ),
             inputSchema={
                 "type": "object",
@@ -148,6 +153,13 @@ async def list_tools() -> list[types.Tool]:
                     "to": {"type": "string"},
                     "sats": {"type": "integer", "minimum": 1},
                     "memo": {"type": "string"},
+                    "idempotency_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional. If omitted, a stable key is derived from "
+                            "(agent, to, sats, memo) so retries can't double-send."
+                        ),
+                    },
                 },
             },
         ),
@@ -195,6 +207,20 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={"type": "object", "properties": {}},
         ),
     ]
+
+
+def _pay_idempotency_key(agent_id: str, to: str, sats: int, memo: str | None) -> str:
+    """Deterministic idempotency key for conduit_pay.
+
+    An MCP tool call can be re-invoked when the model or transport retries after
+    a dropped/slow response. Without a key, the SDK mints a fresh UUID4 per call,
+    so a retry would send a SECOND real payment. Deriving the key from the
+    payment's identity (agent + destination + amount + memo) makes a retry dedupe
+    server-side, while a genuinely different payment (distinct memo) still goes
+    through. Namespaced + versioned so it can't collide with caller keys.
+    """
+    raw = f"mcp:pay:v1:{agent_id}|{to}|{sats}|{memo or ''}"
+    return "mcp-" + hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _ok(payload: dict[str, Any]) -> list[types.TextContent]:
@@ -252,10 +278,18 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
 
         if name == "conduit_pay":
             agent = _agent_for_name_or_id(args["agent"])
+            sats = int(args["sats"])
+            memo = args.get("memo")
+            # Make tool-call retries safe: derive a stable key unless the caller
+            # gave one, so a re-invoked conduit_pay can't double-send.
+            idem = args.get("idempotency_key") or _pay_idempotency_key(
+                agent.id, args["to"], sats, memo
+            )
             receipt = agent.pay(
                 to=args["to"],
-                sats=int(args["sats"]),
-                memo=args.get("memo"),
+                sats=sats,
+                memo=memo,
+                idempotency_key=idem,
             )
             return _ok({
                 "id": receipt.id,
@@ -331,7 +365,7 @@ async def serve_stdio() -> None:
             write,
             InitializationOptions(
                 server_name="conduit",
-                server_version="0.8.4",
+                server_version="0.8.5",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},

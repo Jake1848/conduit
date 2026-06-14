@@ -167,25 +167,39 @@ async def resolve_lightning_address_to_invoice(address: str, sats: int, memo: st
         # DNS-rebinding flip can't slip a private IP past the check. The passed
         # `client` is accepted for compatibility but safe_get uses its own
         # pinning transport.
+        # The LNURL host is fully attacker-controlled (it comes straight from the
+        # payment address), so EVERY field of its response is hostile input.
+        # json() raises ValueError (JSONDecodeError) on non-JSON; a JSON array /
+        # string makes .get() raise AttributeError; bad numerics make int() raise.
+        # Catch all of it and fail the payment cleanly (4xx) instead of 500ing.
         try:
             r = await safe_get(url, client=client)
             r.raise_for_status()
             params = r.json()
         except InvalidInput:
             raise
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
             raise PaymentFailed(f"LNURL-pay lookup failed for {address}: {e}") from e
 
+        if not isinstance(params, dict):
+            raise PaymentFailed(f"LNURL-pay response for {address} was not a JSON object")
         if params.get("tag") != "payRequest":
             raise PaymentFailed(f"LNURL-pay tag invalid for {address}: {params.get('tag')!r}")
-        min_sendable = int(params.get("minSendable", 0))
-        max_sendable = int(params.get("maxSendable", 0))
+        try:
+            min_sendable = int(params.get("minSendable", 0))
+            max_sendable = int(params.get("maxSendable", 0))
+        except (TypeError, ValueError) as e:
+            raise PaymentFailed(
+                f"LNURL-pay response for {address} has invalid min/maxSendable"
+            ) from e
         if msat < min_sendable or msat > max_sendable:
             raise PaymentFailed(
                 f"{sats} sats outside LNURL-pay bounds "
                 f"[{min_sendable // 1000}, {max_sendable // 1000}] for {address}"
             )
-        callback = params["callback"]
+        callback = params.get("callback")
+        if not isinstance(callback, str) or not callback:
+            raise PaymentFailed(f"LNURL-pay response for {address} missing a callback URL")
         # The callback URL is RESPONSE-supplied — a malicious LNURL server could
         # point it at an internal address or an unrelated domain. Require https
         # (assert_safe_url enforces scheme + IP safety) AND, as defense in depth,
@@ -216,8 +230,10 @@ async def resolve_lightning_address_to_invoice(address: str, sats: int, memo: st
             payload = r2.json()
         except InvalidInput:
             raise
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError) as e:
             raise PaymentFailed(f"LNURL-pay callback failed for {address}: {e}") from e
+        if not isinstance(payload, dict):
+            raise PaymentFailed(f"LNURL-pay callback for {address} returned a non-object")
         if payload.get("status") == "ERROR":
             raise PaymentFailed(payload.get("reason", "LNURL-pay callback returned ERROR"))
         invoice = payload.get("pr")

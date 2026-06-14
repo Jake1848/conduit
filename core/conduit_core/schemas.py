@@ -25,6 +25,26 @@ def _no_null_bytes(v: str) -> str:
 SafeStr = Annotated[str, AfterValidator(_no_null_bytes)]
 
 
+def _valid_pubkey(v: str) -> str:
+    # A compressed secp256k1 node pubkey: exactly 66 hex chars, 02/03 prefix.
+    # Validate at the EDGE so a malformed pubkey returns 422 BEFORE any debit —
+    # otherwise keysend's bytes.fromhex() would raise mid-payment, AFTER the
+    # agent was debited, stranding funds in needs_reconciliation for a payment
+    # that never left the node.
+    s = v.strip()
+    if len(s) != 66 or s[:2] not in ("02", "03"):
+        raise ValueError("dest_pubkey must be a 66-char compressed pubkey (02/03 prefix)")
+    try:
+        bytes.fromhex(s)
+    except ValueError as e:
+        raise ValueError("dest_pubkey must be valid hex") from e
+    return s
+
+
+# An optional compressed node pubkey (validated when present).
+Pubkey = Annotated[str, AfterValidator(_valid_pubkey)]
+
+
 class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -114,7 +134,7 @@ class PaymentSendIn(BaseModel):
     """Pay a BOLT11 invoice or do keysend to a pubkey."""
     agent_id: str
     payment_request: str | None = Field(None, max_length=4000, description="BOLT11 invoice string")
-    dest_pubkey: str | None = Field(None, max_length=140, description="For keysend")
+    dest_pubkey: Pubkey | None = Field(None, max_length=140, description="For keysend")
     sats: int | None = Field(
         None, ge=1, le=MAX_SATS, description="Required for keysend or zero-amount invoices"
     )

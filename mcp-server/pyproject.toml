@@ -1,6 +1,6 @@
 [project]
 name = "conduit-btc-mcp"
-version = "0.8.4"
+version = "0.8.5"
 description = "MCP server exposing your self-hosted, non-custodial Conduit Lightning instance to any MCP-compatible AI agent"
 readme = "README.md"
 license = { text = "MIT" }
@@ -8,7 +8,7 @@ requires-python = ">=3.10"
 dependencies = [
   "mcp>=0.9.0",
   # The Conduit Python SDK is published as `conduit-btc` (imported as `conduit`).
-  "conduit-btc>=0.8.4",
+  "conduit-btc>=0.8.5",
 ]
 
 [project.scripts]

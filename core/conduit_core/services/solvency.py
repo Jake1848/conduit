@@ -141,11 +141,22 @@ async def compute_solvency(
     # ratio under load. The single source of truth for what the operator owes
     # agents is Σ balance_sats; an in-flight send is money LEAVING the node, not a
     # depositor claim to keep liquidity for.
+    # Sum the FULL up-front debit of each in-flight send — amount + routing-fee
+    # budget + platform fee — so this figure equals exactly what a concurrent
+    # refund would restore to the agent. The treasury withdrawal guard adds
+    # pending_outbound to its conservative liability; omitting platform_fee_sats
+    # would understate it and let a withdrawal + a concurrent refund race the
+    # node below solvency.
     pending_outbound = (
         await session.execute(
             select(
                 func.coalesce(
-                    func.sum(Transaction.amount_sats + Transaction.fee_sats), 0
+                    func.sum(
+                        Transaction.amount_sats
+                        + Transaction.fee_sats
+                        + Transaction.platform_fee_sats
+                    ),
+                    0,
                 )
             ).where(
                 and_(

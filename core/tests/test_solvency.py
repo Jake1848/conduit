@@ -108,8 +108,9 @@ async def test_compute_solvency_pending_outbound_not_double_counted(session):
     """
     from conduit_core.db.models import Agent, Transaction
 
-    # Realistic state: an agent funded with 5100 that has a 4100-sat send in
-    # flight — the send was already debited, so balance_sats is the post-debit 1000.
+    # Realistic state: an agent funded with 5120 that has a send in flight — the
+    # full up-front debit was amount(4000) + fee(100) + platform_fee(20) = 4120,
+    # so balance_sats is the post-debit 1000.
     session.add(Agent(id="ag1", name="a1", balance_sats=1000))
     session.add(
         Transaction(
@@ -118,6 +119,7 @@ async def test_compute_solvency_pending_outbound_not_double_counted(session):
             direction="send",
             amount_sats=4000,
             fee_sats=100,
+            platform_fee_sats=20,
             status="pending",
         )
     )
@@ -137,9 +139,10 @@ async def test_compute_solvency_pending_outbound_not_double_counted(session):
     lnd = _FakeLND(channel_local=10_000, confirmed=0)
     snap = await compute_solvency(session, lnd)
 
-    # pending_outbound is surfaced for observability...
-    assert snap.pending_outbound_sats == 4100
-    # ...but liabilities == Σ balance_sats only (NOT 1000 + 4100).
+    # pending_outbound sums the FULL debit (amount + fee + platform_fee = 4120)
+    # so it matches exactly what a concurrent refund would restore.
+    assert snap.pending_outbound_sats == 4120
+    # ...but liabilities == Σ balance_sats only (NOT 1000 + 4120).
     assert snap.liabilities_sats == 1000
     assert snap.solvent is True
 

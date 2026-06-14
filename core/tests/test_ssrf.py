@@ -15,7 +15,7 @@ import socket
 import httpx
 import pytest
 
-from conduit_core.errors import InvalidInput
+from conduit_core.errors import InvalidInput, PaymentFailed
 from conduit_core.services import safe_http, wallet
 
 
@@ -137,6 +137,43 @@ class _FakeResponse:
 
     def json(self) -> dict:
         return self._payload
+
+
+class _BadJsonResponse:
+    """An LNURL host that returns a 200 with a non-JSON body."""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "NON_JSON",  # body isn't JSON at all -> json() raises ValueError
+        [],          # JSON array, not an object -> .get() would AttributeError
+        {"tag": "payRequest", "minSendable": "abc", "maxSendable": 1_000_000},  # bad numeric
+        {"tag": "payRequest", "minSendable": 1000, "maxSendable": 1_000_000},   # no callback
+    ],
+)
+async def test_lnurl_malformed_response_is_handled_not_500(monkeypatch, payload):
+    """The LNURL host is attacker-controlled; a garbage response must surface as
+    a handled PaymentFailed (502), never an uncaught ValueError/AttributeError/
+    KeyError -> 500."""
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo_returning("93.184.216.34"))
+
+    async def _fake_safe_get(url, *, params=None, **kw):
+        if payload == "NON_JSON":
+            return _BadJsonResponse()
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(wallet, "safe_get", _fake_safe_get)
+
+    with pytest.raises(PaymentFailed):
+        await wallet.resolve_lightning_address_to_invoice("alice@example.com", 100, None)
 
 
 @pytest.mark.asyncio

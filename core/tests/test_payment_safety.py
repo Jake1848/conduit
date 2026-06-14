@@ -10,6 +10,28 @@ async def _credit(client, agent_id: str, sats: int) -> None:
     assert r.status_code == 201, r.text
 
 
+# ---------- keysend dest_pubkey validation (no debit on malformed input) ----------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_pubkey", ["deadbeef", "xyz", "04" + "aa" * 32, "02" + "zz" * 32])
+async def test_malformed_dest_pubkey_is_422_and_does_not_debit(client, bad_pubkey):
+    """A malformed keysend pubkey must be rejected with 422 BEFORE any debit —
+    otherwise the agent is charged for a payment that never leaves the node and
+    is stranded in needs_reconciliation."""
+    r = await client.post("/v1/agents", json={"name": f"pk-{bad_pubkey[:6]}"})
+    agent_id = r.json()["id"]
+    await _credit(client, agent_id, 10_000)
+
+    r = await client.post(
+        "/v1/payments/send",
+        json={"agent_id": agent_id, "dest_pubkey": bad_pubkey, "sats": 100},
+    )
+    assert r.status_code == 422, r.text
+
+    bal = (await client.get(f"/v1/agents/{agent_id}/balance")).json()
+    assert bal["available_sats"] == 10_000, "balance must be untouched by a rejected payment"
+
+
 # ---------- Fix #1: BOLT11 amount vs body.sats ----------
 
 @pytest.mark.asyncio
