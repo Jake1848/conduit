@@ -83,6 +83,15 @@ function UpgradeCard({ title, blurb, bullets }: { title: string; blurb: string; 
           </button>
         </div>
         {err && <div className="warn" style={{ marginTop: 8 }}>⚠ {err}</div>}
+        <div className="t-muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+          Don’t have a license?{" "}
+          <a
+            href="mailto:pro@conduit.energy?subject=Conduit%20Pro%20access"
+            style={{ color: "var(--gold)" }}
+          >
+            Request Pro access →
+          </a>
+        </div>
       </div>
       <p className="t-muted" style={{ fontSize: 11.5, marginTop: 14, lineHeight: 1.5 }}>
         Pro unlocks convenience tooling in this dashboard. It does <b>not</b> change

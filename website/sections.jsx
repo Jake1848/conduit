@@ -114,6 +114,7 @@ function Nav() {
         <a href="#console">Console</a>
         <a href="#cases">Use Cases</a>
         <a href="#pricing">Pricing</a>
+        <a href="#pro">Pro</a>
         <a href="#security">Security</a>
       </div>
       <Magnetic strength={6}>
@@ -500,9 +501,9 @@ function Pricing() {
     { n: '01', t: 'Your node, your keys, your rules',
       b: 'Conduit runs on your own infrastructure, against your own LND node, with your own keys. It is self-hosted software — there is no Conduit SaaS, and Conduit never holds your funds or phones home. Fail-closed by design.',
       tg: 'Self-Hosted · Your Infra' },
-    { n: '02', t: 'Usage-based pricing — pay per transaction in sats',
-      b: 'No subscriptions. No fiat. No cards. A small per-transaction platform fee in satoshis is built into the payment flow and configured by whoever deploys Conduit. You only pay when value moves.',
-      tg: 'Sats Only · No Subscription' },
+    { n: '02', t: 'An optional fee — yours to keep',
+      b: 'Charge your own agents a small per-transaction fee in sats if you want to. It accrues in your treasury and never leaves your node — Conduit takes none of it. Default 0.5%, fully configurable, or off entirely.',
+      tg: 'Sats Only · You Keep It' },
     { n: '03', t: '5-minute deploy with Docker',
       b: 'Clone the repo, set your env, run one Docker command, and point Conduit at your LND node. You are issuing agent wallets and settling payments in minutes — entirely on your own boxes.',
       tg: 'Docker · Open Source · MIT' },
@@ -511,13 +512,13 @@ function Pricing() {
     <section className="section col pricing" id="pricing">
       <div className="layer-head" data-reveal>
         <div className="eyebrow">06 — Pricing</div>
-        <h2>Usage-based pricing.<br /><em>Pay per transaction</em> in sats.</h2>
-        <p className="pricing-lede">No subscriptions, no fiat, no Stripe. Conduit charges a small platform fee in satoshis on each payment — built right into the flow and fully configurable by the operator who deploys it.</p>
+        <h2>Free to self-host.<br /><em>Pro</em> when you scale.</h2>
+        <p className="pricing-lede">The core — SDK, API, MCP and the full payment path — is open-source (MIT) and free forever. Two optional layers sit on top: a per-transaction fee <em>you</em> configure and keep, and Conduit Pro for management tooling.</p>
       </div>
 
       <div className="fee-card" data-reveal data-rd="1">
-        <div className="fee-tag">PLATFORM FEE · PER TRANSACTION</div>
-        <div className="fee-headline"><span className="fee-num">0.5%</span> per transaction</div>
+        <div className="fee-tag">OPERATOR FEE · YOU CONFIGURE &amp; KEEP</div>
+        <div className="fee-headline"><span className="fee-num">0.5%</span> per transaction <span style={{ color: 'var(--t-3)', fontWeight: 400 }}>· default</span></div>
         <div className="fee-bounds">
           <div className="fee-bound">
             <span className="fee-bound-v">1 sat</span>
@@ -529,7 +530,34 @@ function Pricing() {
             <span className="fee-bound-l">cap</span>
           </div>
         </div>
-        <p className="fee-note">Charged on top of the payment, kept on settle, and refunded in full if the payment fails. Defaults are configurable per deployment via <code>PLATFORM_FEE_PERCENT</code>, <code>PLATFORM_FEE_MIN_SATS</code>, and <code>PLATFORM_FEE_MAX_SATS</code>.</p>
+        <p className="fee-note">An optional fee <em>you</em> charge your own agents — it accrues in <em>your</em> treasury and never leaves your node; Conduit takes none of it. Charged on top, kept on settle, refunded in full if the payment fails. Configure or disable per deployment via <code>PLATFORM_FEE_PERCENT</code> (set <code>0</code> to turn it off).</p>
+      </div>
+
+      <div className="fee-card" id="pro" data-reveal data-rd="2" style={{ marginTop: 24 }}>
+        <div className="fee-tag">CONDUIT PRO · SUBSCRIPTION</div>
+        <div className="fee-headline">Management features. <span className="fee-num">Contact for pricing.</span></div>
+        <div className="fee-bounds">
+          <div className="fee-bound">
+            <span className="fee-bound-v">Alerts</span>
+            <span className="fee-bound-l">solvency · sync · workers</span>
+          </div>
+          <div className="fee-bound-sep" />
+          <div className="fee-bound">
+            <span className="fee-bound-v">Analytics</span>
+            <span className="fee-bound-l">revenue · latency · agents</span>
+          </div>
+          <div className="fee-bound-sep" />
+          <div className="fee-bound">
+            <span className="fee-bound-v">Fleet</span>
+            <span className="fee-bound-l">all your instances</span>
+          </div>
+        </div>
+        <p className="fee-note">Optional convenience tooling for operators running real volume. The self-hosted core stays 100% free and ungated — Pro unlocks dashboard features only, verified by an offline license. No lock-in on the money path.</p>
+        <div className="pricing-cta" style={{ marginTop: 28 }}>
+          <Magnetic strength={8}>
+            <a className="btn btn-primary" href="mailto:pro@conduit.energy?subject=Conduit%20Pro%20access&body=Tell%20us%20about%20your%20setup%20%E2%80%94%20network%2C%20how%20many%20instances%2C%20and%20which%20features%20you%20want%20(alerts%20%2F%20analytics%20%2F%20fleet).">Request Pro access <span className="btn-arrow">→</span></a>
+          </Magnetic>
+        </div>
       </div>
 
       <div className="feature-grid pricing-grid">
@@ -654,6 +682,7 @@ function Footer() {
         <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Docs</a>
         <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Quickstart</a>
         <a href="#pricing">Pricing</a>
+        <a href="#pro">Pro</a>
       </div>
     </footer>
   );
