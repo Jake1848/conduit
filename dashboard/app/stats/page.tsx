@@ -65,7 +65,7 @@ export default function StatsPage() {
                   <td style={{ textTransform: "capitalize", fontWeight: 500 }}>{n.network}</td>
                   <td className="right">
                     <span className={"st " + (l ? (l.ok ? "st-live" : "st-frozen") : "st-frozen")}>
-                      {l ? (l.ok ? "live" : "checking…") : "…"}
+                      {l ? (l.ok ? "live" : "unreachable") : "checking…"}
                     </span>
                   </td>
                   <td className="right t-mono t-muted" style={{ fontSize: 12.5 }}>{l?.version ?? n.version}</td>
@@ -78,9 +78,9 @@ export default function StatsPage() {
 
       {hasAgg && (
         <div className="stat-grid" style={{ marginTop: 16 }}>
-          {agg.payments_settled != null && <div className="stat-card"><div className="sc-label">Payments settled</div><div className="sc-value">{agg.payments_settled.toLocaleString()}</div></div>}
-          {agg.volume_sats != null && <div className="stat-card"><div className="sc-label">Volume (sats)</div><div className="sc-value">{agg.volume_sats.toLocaleString()}</div></div>}
-          {agg.uptime_pct != null && <div className="stat-card"><div className="sc-label">Uptime</div><div className="sc-value">{agg.uptime_pct}%</div></div>}
+          {agg.payments_settled != null && <div className="stat-card"><div className="label">Payments settled</div><div className="value">{agg.payments_settled.toLocaleString()}</div></div>}
+          {agg.volume_sats != null && <div className="stat-card"><div className="label">Volume (sats)</div><div className="value">{agg.volume_sats.toLocaleString()}</div></div>}
+          {agg.uptime_pct != null && <div className="stat-card"><div className="label">Uptime</div><div className="value">{agg.uptime_pct}%</div></div>}
         </div>
       )}
 

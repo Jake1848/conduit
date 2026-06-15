@@ -66,11 +66,21 @@ function FleetView() {
     setStates((s) => ({ ...s, [inst.id]: { ...s[inst.id], loading: true } }));
     const base = inst.url.replace(/\/+$/, "");
     const headers = { Authorization: `Bearer ${inst.key}` };
+    // A common silent failure: an https-hosted dashboard cannot fetch an http://
+    // instance (browser mixed-content block). Diagnose it explicitly.
+    if (typeof window !== "undefined" && window.location.protocol === "https:" && base.startsWith("http://")) {
+      setStates((s) => ({ ...s, [inst.id]: { loading: false, reachable: false, error: "Blocked: this dashboard is on https and the browser won’t reach an http:// instance (mixed content). Use https on the instance, or open the dashboard over http." } }));
+      return;
+    }
     try {
-      const h = await fetch(`${base}/v1/health`, { signal: AbortSignal.timeout(10000) }).then((r) => r.json());
+      const hr = await fetch(`${base}/v1/health`, { headers, signal: AbortSignal.timeout(10000) });
+      if (!hr.ok) throw new Error(`health returned ${hr.status}`);
+      const h = await hr.json();
       let agents: number | undefined, revenueSats: number | undefined, solvent: boolean | null | undefined, ratio: number | null | undefined;
       try {
-        const m = await fetch(`${base}/v1/metrics`, { headers, signal: AbortSignal.timeout(10000) }).then((r) => r.json());
+        const mr = await fetch(`${base}/v1/metrics`, { headers, signal: AbortSignal.timeout(10000) });
+        if (!mr.ok) throw new Error(`metrics ${mr.status}`);
+        const m = await mr.json();
         agents = m.total_agents; revenueSats = m.fee_revenue_total_sats; solvent = m.solvent ?? null; ratio = m.solvency_ratio ?? null;
       } catch { /* metrics may be admin-gated; health is enough to show reachable */ }
       setStates((s) => ({ ...s, [inst.id]: { loading: false, reachable: true, version: h.version, network: h.network, agents, revenueSats, solvent, solvencyRatio: ratio } }));
@@ -120,8 +130,8 @@ function FleetView() {
                   </td>
                   <td>
                     {st?.loading ? <span className="spinner" /> :
-                      st?.reachable ? <span className="t-mono">{st.version}</span> :
-                      <span className="st st-frozen">unreachable</span>}
+                      st?.reachable ? <span className="t-mono">{st.version ?? "—"}</span> :
+                      <span className="st st-frozen" title={st?.error || undefined}>unreachable</span>}
                   </td>
                   <td className="t-mono">{st?.network ?? "—"}</td>
                   <td className="right t-mono">{st?.agents ?? "—"}</td>

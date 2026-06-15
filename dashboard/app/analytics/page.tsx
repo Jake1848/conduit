@@ -50,13 +50,19 @@ function AnalyticsView() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [fees, setFees] = useState<Fees | null>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setErr(null);
     try {
       const [m, f] = await Promise.all([api.getMetrics(), api.getFees().catch(() => null)]);
       setMetrics(m);
       setFees(f);
+    } catch (e) {
+      // Keep metrics null and surface a real error rather than an unhandled
+      // rejection + indistinguishable blank "—" placeholders.
+      setErr(e instanceof Error ? e.message : "Failed to load analytics");
     } finally {
       setLoading(false);
     }
@@ -64,6 +70,21 @@ function AnalyticsView() {
   useEffect(() => { load(); }, [load]);
 
   if (loading && !metrics) return <div className="loading-row"><span className="spinner" /> Loading analytics…</div>;
+  if (err && !metrics)
+    return (
+      <div className="panel" style={{ padding: 22 }}>
+        <div style={{ color: "var(--red)", fontWeight: 600, fontSize: 13.5, marginBottom: 8 }}>
+          Couldn’t load analytics — {err}
+        </div>
+        <p className="t-muted" style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0 }}>
+          /v1/metrics needs a connected API key with read scope and a reachable API.
+          Check the session key and the instance, then retry.
+        </p>
+        <button className="tb-btn" style={{ marginTop: 14 }} onClick={load} disabled={loading}>
+          <RefreshCw size={14} /> Retry
+        </button>
+      </div>
+    );
 
   const revBars = (fees?.fees_by_day ?? []).slice().reverse().map((d) => ({ label: d.date, value: d.sats }));
   const volBars = (metrics?.hourly ?? []).map((h) => ({ label: h.hour.slice(11, 16), value: h.volume_sats }));

@@ -70,7 +70,10 @@ function hexToBytes(hex: string): Uint8Array {
  *  and it hasn't expired; otherwise null. Pure crypto — no network. */
 export async function verifyLicense(token: string): Promise<License | null> {
   try {
-    const [payloadB64, sigB64] = token.trim().split(".");
+    // Exactly two segments — reject malleable tokens like "payload.sig.junk".
+    const parts = token.trim().split(".");
+    if (parts.length !== 2) return null;
+    const [payloadB64, sigB64] = parts;
     if (!payloadB64 || !sigB64) return null;
     const payloadBytes = b64urlToBytes(payloadB64);
     const payloadStr = new TextDecoder().decode(payloadBytes);
@@ -80,7 +83,11 @@ export async function verifyLicense(token: string): Promise<License | null> {
     const ok = await ed.verifyAsync(sig, payloadBytes, pub);
     if (!ok) return null;
     const lic = JSON.parse(payloadStr) as License;
-    if (lic.expires && new Date(lic.expires).getTime() < Date.now()) return null;
+    // Fail closed: a present-but-unparseable `expires` must not read as never-expiring.
+    if (lic.expires != null) {
+      const exp = new Date(lic.expires).getTime();
+      if (Number.isNaN(exp) || exp < Date.now()) return null;
+    }
     if (!Array.isArray(lic.features)) return null;
     return lic;
   } catch {
