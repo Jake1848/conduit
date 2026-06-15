@@ -18,6 +18,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, [pathname]);
 
+  // Public routes render standalone — no login, no operator shell. The /stats
+  // transparency page is intentionally public (it shows only opt-in aggregates).
+  const PUBLIC_ROUTES = ["/stats"];
+  if (PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"))) {
+    return <>{children}</>;
+  }
+
   if (status === "loading") {
     return (
       <div className="login-wrap">

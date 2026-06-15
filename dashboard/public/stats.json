@@ -1,0 +1,24 @@
+{
+  "_about": "Opt-in ecosystem proof-of-life published by the Conduit project. This file is the ONLY source the public /stats page reads. It contains ONLY data the project chooses to publish about its OWN instances — nothing is collected from other operators, and no private ledger data appears here. Defaults are minimal; add aggregate fields below only if you deliberately choose to share them.",
+  "published_at": "2026-06-14",
+  "project": {
+    "version": "0.8.5",
+    "license": "MIT",
+    "repo": "https://github.com/Jake1848/conduit"
+  },
+  "networks": [
+    { "network": "mainnet", "status": "live", "version": "0.8.5" },
+    { "network": "testnet", "status": "live", "version": "0.8.5" },
+    { "network": "regtest", "status": "live", "version": "0.8.5" }
+  ],
+  "highlights": [
+    "Open-source (MIT), self-hosted, non-custodial",
+    "First real mainnet Lightning payment settled end-to-end"
+  ],
+  "aggregates": {
+    "_note": "OFF by default. To publish ecosystem volume, add e.g. \"payments_settled\": 1234 and \"volume_sats\": 5678900 here. Left empty so nothing is over-claimed.",
+    "payments_settled": null,
+    "volume_sats": null,
+    "uptime_pct": null
+  }
+}
