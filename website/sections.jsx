@@ -297,7 +297,7 @@ function Layer() {
       b: 'Sub-second, sub-cent payments routed straight through your own LND node. Your channels, your liquidity, your rules — Conduit never sits in the path of your funds.',
       tg: 'Sub-50ms · Your Node' },
     { n: '04', t: 'Bitcoin Finality',
-      b: 'Every transaction settles on the most credibly neutral monetary network in existence. No issuer, no chargebacks, no permission. Running on testnet today; mainnet is supported and in progress.',
+      b: 'Every transaction settles on the most credibly neutral monetary network in existence. No issuer, no chargebacks, no permission. Validated end-to-end on mainnet, and runs the same on testnet and regtest.',
       tg: 'Bitcoin · Final · Neutral' },
   ];
   return (
@@ -333,7 +333,7 @@ function Layer() {
             <li>Self-hosted, open-source software you run on your own infrastructure.</li>
             <li>A FastAPI core plus a virtual ledger over one operator-controlled LND node.</li>
             <li>The operator's custody: you run the node, hold its keys, and control the funds.</li>
-            <li>Live on testnet and regtest today; mainnet is supported and in progress.</li>
+            <li>Live on mainnet, testnet, and regtest — validated end-to-end on mainnet, still early.</li>
           </ul>
         </div>
         <div className="isnt-col isnt-not">
@@ -342,7 +342,7 @@ function Layer() {
             <li>Not a hosted service — there's no Conduit SaaS, and nothing phones home.</li>
             <li>Not non-custodial at the agent layer: agent balances are operator-custodied IOUs the operator can credit, debit, freeze, or sweep.</li>
             <li>Agents hold API keys, not Bitcoin signing keys — there is no per-agent on-chain key.</li>
-            <li>Not running on mainnet, and not externally audited.</li>
+            <li>Not externally audited, and still early — single-operator, modest volume.</li>
           </ul>
         </div>
       </div>
@@ -674,7 +674,7 @@ function Footer() {
       <div className="copy">
         <div>conduit.energy</div>
         <div className="dim">Self-hosted Bitcoin / Lightning payment rails for autonomous AI agents</div>
-        <div className="dim">Your node, your keys, your rules · MIT licensed · testnet today, mainnet in progress</div>
+        <div className="dim">Your node, your keys, your rules · MIT licensed · mainnet-validated, early — self-hosted on your own LND node</div>
         <div className="dim">© 2026 Conduit Labs</div>
       </div>
       <div className="links">
