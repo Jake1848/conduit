@@ -1928,10 +1928,10 @@ function Hero() {
 /* ----------------------- STAT STRIP ----------------------- */
 function StatStrip() {
   const items = [
-    { lbl: 'Volume Routed',       to: 48.2,  decimals: 1, prefix: '$', suffix: 'M', delta: '+ $4.2M · 30d', seed: 12 },
-    { lbl: 'M2M Settlements',     to: 12.8,  decimals: 1, prefix: '',  suffix: 'M', delta: '+ 38% MoM',    seed: 34 },
-    { lbl: 'Settlement Latency',  to: 47,    decimals: 0, prefix: '',  suffix: '',  delta: 'p99 · 118ms', seed: 56, dn: true },
-    { lbl: 'Agents Deployed',     to: 2840,  decimals: 0, prefix: '',  suffix: '',  delta: '+ 12 / hr',   seed: 78 },
+    { lbl: 'Networks live',     to: 3,   decimals: 0, prefix: '', suffix: '',  delta: 'mainnet · testnet · regtest', seed: 12 },
+    { lbl: 'Platform fee',      to: 0.5, decimals: 1, prefix: '', suffix: '%', delta: 'default · you keep it',       seed: 34 },
+    { lbl: 'MCP tools',         to: 8,   decimals: 0, prefix: '', suffix: '',  delta: 'pay · receive · policy …',    seed: 56 },
+    { lbl: 'Open-source SDKs',  to: 2,   decimals: 0, prefix: '', suffix: '',  delta: 'Python · TypeScript',         seed: 78 },
   ];
   return (
     <React.Fragment>
@@ -1950,7 +1950,7 @@ function StatStrip() {
           </div>
         ))}
       </div>
-      <div className="strip-note" data-reveal>Illustrative figures — sample aggregates, not live metrics. Conduit is self-hosted: every node is run by its operator on their own infrastructure, and Conduit never holds these funds.</div>
+      <div className="strip-note" data-reveal>Self-hosted and non-custodial — every node is run by its operator on their own infrastructure, and Conduit never holds funds. Mainnet-validated, early.</div>
     </React.Fragment>
   );
 }
