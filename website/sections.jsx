@@ -353,24 +353,33 @@ function Layer() {
 /* ----------------------- SDK ----------------------- */
 const SDK_SAMPLES = {
   'Python': [
-    { c: 'com', t: '# autonomous_agent.py — Conduit SDK quickstart' },
+    { c: 'com', t: '# autonomous_agent.py — Conduit SDK quickstart  (pip install conduit-btc)' },
     null,
-    { c: 'kw',  t: 'from' }, { c: 'pun', t: ' conduit ' }, { c: 'kw', t: 'import' }, { c: 'pun', t: ' ' }, { c: 'cls', t: 'Agent' }, { c: 'pun', t: ', ' }, { c: 'cls', t: 'Policy' }, 'NL',
+    { c: 'kw',  t: 'from' }, { c: 'pun', t: ' conduit ' }, { c: 'kw', t: 'import' }, { c: 'pun', t: ' ' }, { c: 'cls', t: 'Agent' }, 'NL',
     null,
-    { c: 'pun', t: 'agent = ' }, { c: 'cls', t: 'Agent' }, { c: 'pun', t: '.' }, { c: 'fn', t: 'create' }, { c: 'pun', t: '(' }, 'NL',
-    { c: 'pun', t: '    name=' }, { c: 'str', t: '"compute-router-7"' }, { c: 'pun', t: ',' }, 'NL',
-    { c: 'pun', t: '    policy=' }, { c: 'cls', t: 'Policy' }, { c: 'pun', t: '(' }, { c: 'pun', t: 'max_per_hour=' }, { c: 'num', t: '10_000' }, { c: 'pun', t: '),' }, 'NL',
-    { c: 'pun', t: ')' }, 'NL',
+    { c: 'com', t: '# one virtual wallet per agent, on your own LND node' }, 'NL',
+    { c: 'pun', t: 'agent = ' }, { c: 'cls', t: 'Agent' }, { c: 'pun', t: '.' }, { c: 'fn', t: 'create' }, { c: 'pun', t: '(name=' }, { c: 'str', t: '"compute-router-7"' }, { c: 'pun', t: ', daily_limit=' }, { c: 'num', t: '50_000' }, { c: 'pun', t: ')' }, 'NL',
+    { c: 'pun', t: 'agent.policy.' }, { c: 'fn', t: 'attach' }, { c: 'pun', t: '(max_per_hour=' }, { c: 'num', t: '10_000' }, { c: 'pun', t: ', allowlist=[' }, { c: 'str', t: '"02beef…"' }, { c: 'pun', t: '])' }, 'NL',
     null,
     { c: 'com', t: '# pay another agent over your own LND node' }, 'NL',
-    { c: 'pun', t: 'receipt = agent.' }, { c: 'fn', t: 'pay' }, { c: 'pun', t: '(' }, 'NL',
-    { c: 'pun', t: '    to=' }, { c: 'str', t: '"compute-node-7@your-lnd.example.com"' }, { c: 'pun', t: ',' }, 'NL',
-    { c: 'pun', t: '    sats=' }, { c: 'num', t: '150' }, { c: 'pun', t: ',' }, 'NL',
-    { c: 'pun', t: '    memo=' }, { c: 'str', t: '"inference · 1.2K tokens"' }, { c: 'pun', t: ',' }, 'NL',
-    { c: 'pun', t: ')' }, 'NL',
+    { c: 'pun', t: 'receipt = agent.' }, { c: 'fn', t: 'pay' }, { c: 'pun', t: '(to=' }, { c: 'str', t: '"compute-node-7@your-lnd.example.com"' }, { c: 'pun', t: ', sats=' }, { c: 'num', t: '150' }, { c: 'pun', t: ')' }, 'NL',
     null,
     { c: 'fn',  t: 'print' }, { c: 'pun', t: '(receipt.hash, receipt.settled_in_ms)' }, 'NL',
     { c: 'com', t: '# → 4a8c…f1   47' },
+  ],
+  'TypeScript': [
+    { c: 'com', t: '// autonomous_agent.ts — Conduit SDK quickstart  (npm i @conduit-btc/sdk)' },
+    null,
+    { c: 'kw',  t: 'import' }, { c: 'pun', t: ' { ' }, { c: 'cls', t: 'Agent' }, { c: 'pun', t: ' } ' }, { c: 'kw', t: 'from' }, { c: 'pun', t: ' ' }, { c: 'str', t: "'@conduit-btc/sdk'" }, { c: 'pun', t: ';' }, 'NL',
+    null,
+    { c: 'com', t: '// one virtual wallet per agent, on your own LND node' }, 'NL',
+    { c: 'kw',  t: 'const' }, { c: 'pun', t: ' agent = ' }, { c: 'kw', t: 'await' }, { c: 'pun', t: ' ' }, { c: 'cls', t: 'Agent' }, { c: 'pun', t: '.' }, { c: 'fn', t: 'create' }, { c: 'pun', t: '({ name: ' }, { c: 'str', t: "'compute-router-7'" }, { c: 'pun', t: ', dailyLimit: ' }, { c: 'num', t: '50_000' }, { c: 'pun', t: ' });' }, 'NL',
+    { c: 'kw',  t: 'await' }, { c: 'pun', t: ' agent.policy.' }, { c: 'fn', t: 'attach' }, { c: 'pun', t: '({ maxPerHour: ' }, { c: 'num', t: '10_000' }, { c: 'pun', t: ' });' }, 'NL',
+    null,
+    { c: 'com', t: '// pay another agent over your own LND node' }, 'NL',
+    { c: 'kw',  t: 'const' }, { c: 'pun', t: ' receipt = ' }, { c: 'kw', t: 'await' }, { c: 'pun', t: ' agent.' }, { c: 'fn', t: 'pay' }, { c: 'pun', t: '({ to: ' }, { c: 'str', t: "'compute-node-7@lnd.example.com'" }, { c: 'pun', t: ', sats: ' }, { c: 'num', t: '150' }, { c: 'pun', t: ' });' }, 'NL',
+    null,
+    { c: 'pun', t: 'console.' }, { c: 'fn', t: 'log' }, { c: 'pun', t: '(receipt.hash, receipt.settledInMs);' },
   ],
 };
 
@@ -389,7 +398,7 @@ function SDK() {
   const [lang, setLang] = React.useState('Python');
   const [copied, setCopied] = React.useState(false);
   const langs = ['Python', 'TypeScript'];
-  // TypeScript reuses the Python sample shape for now — same look
+  // Each language has its own verified sample; fall back to Python defensively.
   const tokens = SDK_SAMPLES[lang] || SDK_SAMPLES['Python'];
   const lines = rowsFromTokens(tokens).slice(0, 19);
 
