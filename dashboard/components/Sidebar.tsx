@@ -106,7 +106,7 @@ export function Sidebar() {
         <span className="wm">CONDUIT</span>
       </div>
       <div className="sb-breadcrumb">
-        conduit.energy / console / <b>agent-fleet-prod</b>
+        conduit.energy / console / <b>{network || "—"}</b>
       </div>
       <nav className="sb-nav">
         <div className="sb-section">
