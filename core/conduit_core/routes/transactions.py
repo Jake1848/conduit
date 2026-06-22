@@ -7,11 +7,16 @@ from ..db import get_session
 from ..db.models import Agent, Transaction
 from ..errors import AgentNotFound, NotFound
 from ..schemas import TransactionListOut, TransactionOut
+from ..services.preimage import verify_preimage
 
 router = APIRouter(tags=["transactions"])
 
 
 def _to_out(t: Transaction) -> TransactionOut:
+    # Read-scoped, fleet-wide surface: surface a (non-secret) integrity fault but
+    # never the preimage itself — it is a bearer secret returned only by the
+    # write-scoped pay/send response.
+    _, preimage_error = verify_preimage(t.payment_preimage, t.payment_hash)
     return TransactionOut(
         id=t.id,
         agent_id=t.agent_id,
@@ -21,6 +26,7 @@ def _to_out(t: Transaction) -> TransactionOut:
         platform_fee_sats=t.platform_fee_sats,
         destination=t.destination,
         payment_hash=t.payment_hash,
+        preimage_error=preimage_error,
         status=t.status,  # type: ignore[arg-type]
         memo=t.memo,
         settled_at=t.settled_at,

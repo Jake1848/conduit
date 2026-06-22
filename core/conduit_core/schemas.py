@@ -158,6 +158,25 @@ class ReceiptOut(BaseModel):
     agent_id: str
     status: TxStatus
     hash: str | None = Field(None, description="Payment hash (hex)")
+    preimage: str | None = Field(
+        None,
+        description=(
+            "Payment preimage (hex) — a bearer proof-of-payment secret needed to "
+            "satisfy an L402 auth challenge. Returned ONLY in the synchronous "
+            "write-scoped POST /pay and /send response, to the caller who made "
+            "the payment, and only when it verifies against the hash. It is never "
+            "returned by a read-scoped GET (those report preimage_error only). "
+            "Null while pending/failed or when no preimage is known."
+        ),
+    )
+    preimage_error: str | None = Field(
+        None,
+        description=(
+            "Set only when a stored preimage failed integrity verification (a "
+            "server-side fault). Distinguishes 'failed to verify' from a "
+            "legitimately absent preimage (both leave preimage null)."
+        ),
+    )
     amount_sats: int
     fee_sats: int = Field(0, description="LND routing fee (budget while pending, actual on settle)")
     platform_fee_sats: int = Field(0, description="Conduit operator platform fee (revenue)")
@@ -197,6 +216,20 @@ class TransactionOut(BaseModel):
     platform_fee_sats: int = Field(0, description="Conduit operator platform fee (revenue)")
     destination: str | None
     payment_hash: str | None
+    # NOTE: the payment preimage is a bearer proof-of-payment secret (it satisfies
+    # the L402 `Authorization` challenge). It is deliberately NOT exposed on this
+    # read-scoped, fleet-wide transaction/audit surface — only the write-scoped
+    # pay/send response (ReceiptOut) returns it, to the caller who made the
+    # payment. preimage_error carries no secret and is safe to surface here.
+    preimage_error: str | None = Field(
+        None,
+        description=(
+            "Set only when a stored preimage failed integrity verification (a "
+            "server-side fault), distinct from a legitimately absent preimage. "
+            "Carries no secret. The preimage itself is never returned on this "
+            "surface — see the pay/send response."
+        ),
+    )
     status: TxStatus
     memo: str | None
     settled_at: datetime | None
