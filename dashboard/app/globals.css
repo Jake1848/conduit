@@ -545,17 +545,17 @@ table.data th:first-child, table.data td:first-child { min-width: 220px; }
 /* ============ MISC ============ */
 .fee { color: var(--t2); font-family: var(--f-mono); }
 .empty { padding: 40px; text-align: center; color: var(--t3); font-size: 13px; }
-.coming-soon {
+.empty-state {
   display: grid; place-items: center; min-height: 360px;
 }
-.coming-soon .cs-inner { text-align: center; max-width: 360px; }
-.coming-soon .cs-ico {
+.empty-state .es-inner { text-align: center; max-width: 360px; }
+.empty-state .es-ico {
   width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 18px;
   display: grid; place-items: center; color: var(--gold);
   background: var(--gold-soft); border: 1px solid var(--gold-line);
 }
-.coming-soon h2 { font-size: 18px; font-weight: 600; }
-.coming-soon p { font-size: 13px; color: var(--t2); margin-top: 8px; line-height: 1.6; }
+.empty-state h2 { font-size: 18px; font-weight: 600; }
+.empty-state p { font-size: 13px; color: var(--t2); margin-top: 8px; line-height: 1.6; }
 
 /* spinner */
 .spinner {

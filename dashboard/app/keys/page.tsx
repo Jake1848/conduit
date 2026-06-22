@@ -48,9 +48,9 @@ export default function KeysPage() {
 
   if (forbidden) {
     return (
-      <div className="coming-soon">
-        <div className="cs-inner">
-          <div className="cs-ico">
+      <div className="empty-state">
+        <div className="es-inner">
+          <div className="es-ico">
             <Plus size={24} />
           </div>
           <h2>Admin access required</h2>

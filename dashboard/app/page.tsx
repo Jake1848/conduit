@@ -292,7 +292,7 @@ export default function OverviewPage() {
                 <div className="agent-meta">
                   <div className="nm">{a.name}</div>
                   <div className="scope">
-                    <span className="tag">scope: {roleFromName(a.name)}</span> &nbsp;{" "}
+                    <span className="tag">group: {roleFromName(a.name)}</span> &nbsp;{" "}
                     {a.tx_today.toLocaleString()} tx today
                   </div>
                 </div>

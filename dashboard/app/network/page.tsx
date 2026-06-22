@@ -41,9 +41,9 @@ export default function NetworkPage() {
 
   if (tier !== "admin" || forbidden) {
     return (
-      <div className="coming-soon">
-        <div className="cs-inner">
-          <div className="cs-ico">
+      <div className="empty-state">
+        <div className="es-inner">
+          <div className="es-ico">
             <Share2 size={24} />
           </div>
           <h2>Admin access required</h2>
@@ -183,8 +183,7 @@ export default function NetworkPage() {
             </tbody>
           </table>
           <p className="t-muted" style={{ fontSize: 11.5, padding: "10px 14px 0", lineHeight: 1.5 }}>
-            Outbound (local) can send; inbound (remote) can receive. A per-channel
-            topology view is on the roadmap.
+            Outbound (local) can send; inbound (remote) can receive.
           </p>
         </div>
       </div>

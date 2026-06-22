@@ -47,7 +47,7 @@ export default function WalletsPage() {
   function exportCsv() {
     downloadCsv(
       "conduit-wallets.csv",
-      ["name", "id", "scope", "available_sats", "status", "created"],
+      ["name", "id", "group", "available_sats", "status", "created"],
       filtered.map((a) => [
         a.name,
         a.id,
@@ -85,7 +85,7 @@ export default function WalletsPage() {
           }}
         />
         <Dropdown
-          label="Scope"
+          label="Group"
           value={scope}
           options={scopes}
           onChange={(v) => {
@@ -108,10 +108,9 @@ export default function WalletsPage() {
           <thead>
             <tr>
               <th>Agent</th>
-              <th>Scope</th>
+              <th>Group</th>
               <th className="right">Balance</th>
               <th className="right">Tx Today</th>
-              <th>Policy</th>
               <th>Status</th>
               <th>Created</th>
             </tr>
@@ -143,11 +142,6 @@ export default function WalletsPage() {
                   </td>
                   <td className="right t-mono">{tc ? `${tc.count}${tc.hasMore ? "+" : ""}` : "…"}</td>
                   <td>
-                    <span className="t-mono t-muted" style={{ fontSize: 12 }}>
-                      {a.active ? "standard" : "frozen"}
-                    </span>
-                  </td>
-                  <td>
                     <StatusBadge s={a.active ? "live" : "frozen"} />
                   </td>
                   <td className="t-mono t-muted" style={{ fontSize: 12 }}>
@@ -158,7 +152,7 @@ export default function WalletsPage() {
             })}
             {loadingAgents && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={6}>
                   <div className="loading-row">
                     <span className="spinner" /> Loading agents…
                   </div>
@@ -167,7 +161,7 @@ export default function WalletsPage() {
             )}
             {!loadingAgents && filtered.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={6}>
                   <div className="empty">No agents match your filters.</div>
                 </td>
               </tr>

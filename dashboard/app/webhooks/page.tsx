@@ -46,9 +46,9 @@ export default function WebhooksPage() {
 
   if (forbidden) {
     return (
-      <div className="coming-soon">
-        <div className="cs-inner">
-          <div className="cs-ico">
+      <div className="empty-state">
+        <div className="es-inner">
+          <div className="es-ico">
             <WebhookIcon size={24} />
           </div>
           <h2>Admin access required</h2>
@@ -132,7 +132,7 @@ export default function WebhooksPage() {
           <code className="t-gold">X-Conduit-Signature: sha256=HMAC(secret, body)</code> (plus a
           server-key signature). Verify it with the per-webhook secret shown once at creation.
           Payload: <code className="t-mono">{`{ "event", "data", "ts" }`}</code>. Delivery retries
-          with exponential backoff; a delivery-history view is on the roadmap.
+          with exponential backoff.
         </p>
       </div>
 

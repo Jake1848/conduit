@@ -145,6 +145,7 @@ function Dashboard() {
         <div className="dash-chrome">
           <div className="dots"><span /><span /><span /></div>
           <div className="url">conduit.energy / console / <b>agent-fleet-prod</b></div>
+          <div className="env illus"><span className="d" />ILLUSTRATIVE · SAMPLE DATA</div>
           <div className="env"><span className="d" />MAINNET</div>
           <div className="actions">
             <button>SHARE</button>
@@ -284,8 +285,9 @@ function ConsoleSection() {
           <div className="eyebrow">04 — Inside the Console</div>
           <h2>A control plane for<br /><em>fleets of agents.</em></h2>
         </div>
-        <p data-reveal data-rd="1">Watch every wallet, every signature, every routed payment in real time. Set policy, freeze keys, reconcile to the satoshi — without leaving the page.</p>
+        <p data-reveal data-rd="1">Watch every wallet, every routed payment, every ledger entry in one place. Set policy, freeze keys, reconcile to the satoshi — without leaving the page.</p>
       </div>
+      <div className="console-disclaimer" data-reveal data-rd="1">Illustrative — sample data, not live metrics.</div>
       <Dashboard />
     </section>
   );

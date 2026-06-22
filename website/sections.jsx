@@ -19,7 +19,7 @@ function Portal() {
       <span className="portal-hud-c bl" />
       <span className="portal-hud-c br" />
       <span className="portal-tag top">CONDUIT · NODE 001</span>
-      <span className="portal-tag bottom">⚡ LIGHTNING · TESTNET</span>
+      <span className="portal-tag bottom">⚡ LIGHTNING · MAINNET</span>
 
       <svg viewBox="0 0 480 480">
         <defs>
@@ -194,7 +194,7 @@ function Hero() {
         </div>
         <div className="stack" style={{ textAlign: 'right' }}>
           <span>NETWORK</span>
-          <span className="v">LIGHTNING · TESTNET</span>
+          <span className="v">LIGHTNING · MAINNET</span>
         </div>
       </div>
     </section>
@@ -585,7 +585,7 @@ function Pricing() {
           <a className="btn btn-primary" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">Get Started <span className="btn-arrow">→</span></a>
         </Magnetic>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener"><span>Read the Quickstart</span> <span className="btn-arrow">↗</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit/blob/main/QUICKSTART.md" target="_blank" rel="noopener"><span>Read the Quickstart</span> <span className="btn-arrow">↗</span></a>
         </Magnetic>
       </div>
     </section>
@@ -621,7 +621,7 @@ function Security() {
         <h2>Give every agent a wallet,<br />a budget, and <em>rules.</em></h2>
         <p>Autonomy without limits is a liability. Your Conduit deployment evaluates every outbound payment against your declared spending rules before a signature ever happens — and gives you the kill switch if something looks wrong. Fail-closed by default.</p>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#security" target="_blank" rel="noopener"><span>Read the security model</span> <span className="btn-arrow">↗</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit/blob/main/SECURITY.md" target="_blank" rel="noopener"><span>Read the security model</span> <span className="btn-arrow">↗</span></a>
         </Magnetic>
       </div>
       <div className="security-grid">
@@ -665,7 +665,7 @@ function Final() {
           <a className="btn btn-primary" href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener"><span>Get Started on GitHub</span> <span className="btn-arrow">→</span></a>
         </Magnetic>
         <Magnetic strength={8}>
-          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener"><span>Read the Quickstart</span></a>
+          <a className="btn btn-ghost" href="https://github.com/Jake1848/conduit/blob/main/QUICKSTART.md" target="_blank" rel="noopener"><span>Read the Quickstart</span></a>
         </Magnetic>
       </div>
     </section>
@@ -688,8 +688,8 @@ function Footer() {
       </div>
       <div className="links">
         <a href="https://github.com/Jake1848/conduit" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Docs</a>
-        <a href="https://github.com/Jake1848/conduit#quickstart" target="_blank" rel="noopener">Quickstart</a>
+        <a href="https://github.com/Jake1848/conduit/blob/main/QUICKSTART.md" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/Jake1848/conduit/blob/main/QUICKSTART.md" target="_blank" rel="noopener">Quickstart</a>
         <a href="#pricing">Pricing</a>
         <a href="#pro">Pro</a>
       </div>

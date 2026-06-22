@@ -87,7 +87,12 @@ There are no user accounts — the API key **is** the auth:
 | `/wallets/[id]` | **Agent Detail** | Balance, credit/debit, policy editor (`GET`/`POST /policy`), tx history, `POST /v1/invoices`. |
 | `/audit` | **Audit Log** | `GET /v1/transactions/recent`, client-side filtered, CSV export. |
 | `/keys` | **API Keys** | `GET`/`POST`/`DELETE /v1/api-keys`; secret shown once in a modal. Admin only. |
-| `/policies` `/network` `/webhooks` `/sandbox` `/docs` | Placeholders | Styled "coming soon". |
+| `/policies` | **Policies** | `GET /v1/agents` + per-agent `GET`/`POST`/`DELETE /v1/agents/{id}/policy`; view/edit limits, allowlist/blocklist. |
+| `/network` | **Network** | `GET /v1/status` + `GET /v1/metrics`; node identity, liquidity, solvency. Admin only. |
+| `/webhooks` | **Webhooks** | `GET`/`POST`/`DELETE /v1/webhooks`; HMAC `whsec_` secret shown once. Admin only. |
+| `/alerts` `/analytics` `/fleet` | **Pro** | Convenience tooling gated by an offline license (`lib/pro.ts`); read live `/v1/metrics`, `/v1/status`, `/v1/fees`. The money path works without a license. |
+| `/sandbox` | **Sandbox** | Read-only GET API explorer — runs a chosen GET endpoint with the session key; shows JSON + equivalent curl. |
+| `/docs` | **Docs** | In-app links: repo, QUICKSTART, SDK READMEs, DEMO, API endpoint list. |
 
 ### Notes on real-data behavior
 
@@ -97,7 +102,7 @@ There are no user accounts — the API key **is** the auth:
   `GET /v1/transactions/recent`. The agent list (`GET /v1/agents`) returns `balance_sats`
   inline, so the fleet treasury needs no per-agent `/balance` calls. The whole Overview is
   ~3 requests regardless of fleet size (it used to be ~900).
-- There's no scope field on agents, so the "scope" tag is derived from the agent name's role
+- There's no scope field on agents, so the "group" tag is derived from the agent name's role
   prefix; per-agent `tx_today` + balance come from `/v1/metrics`'s `top_agents`.
 - `{id}` routes use the canonical `agt_…` id (the agent **name** is not accepted), so the
   detail route is `/wallets/agt_…`.

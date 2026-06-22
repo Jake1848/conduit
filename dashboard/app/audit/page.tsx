@@ -64,9 +64,9 @@ export default function AuditPage() {
         <Dropdown label="Agent" value={agent} options={agentNames} onChange={(v) => { setAgent(v); setPage(0); }} maxValueChars={16} />
         <Dropdown label="Status" value={status} options={["All", "Settled", "Pending", "Failed"]} onChange={(v) => { setStatus(v); setPage(0); }} />
         <Dropdown label="Direction" value={dir} options={["All", "Send", "Receive"]} onChange={(v) => { setDir(v); setPage(0); }} />
-        <div className="select" style={{ cursor: "default" }}>
-          Date: <b>Recent</b>
-        </div>
+        <span className="t-muted" style={{ fontSize: 12.5, alignSelf: "center", paddingLeft: 2 }}>
+          Showing recent activity
+        </span>
         <div style={{ flex: 1 }} />
         <button className="tb-btn gold" onClick={exportCsv}>
           <Download size={14} /> Export CSV

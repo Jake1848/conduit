@@ -189,7 +189,7 @@ export default function AgentDetailPage() {
           <div className="meta-row">
             <StatusBadge s={agent.active ? "live" : "frozen"} />
             <span className="t-mono t-gold" style={{ fontSize: 12 }}>
-              scope: {roleFromName(agent.name)}
+              group: {roleFromName(agent.name)}
             </span>
             <span className="created">created {fmtDate(agent.created_at)}</span>
           </div>
