@@ -22,6 +22,10 @@ export interface ReceiptJSON {
   destination: string | null;
   memo: string | null;
   created_at: string;
+  /** Preimage of the payment hash, returned by L402-enabled endpoints. */
+  preimage?: string | null;
+  /** Error string if the payment settled but no preimage could be retrieved. */
+  preimage_error?: string | null;
 }
 
 export interface InvoiceJSON {

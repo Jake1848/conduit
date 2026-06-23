@@ -36,6 +36,7 @@ import json
 import os
 from typing import Any
 
+import httpx
 import mcp.server.stdio
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
@@ -46,6 +47,16 @@ from conduit import (
     ConduitError,
     PolicyViolation,
     default_client,
+)
+from conduit.l402 import (
+    FetchResult,
+    InvalidChallenge,
+    L402Config,
+    L402Engine,
+    PaidResult,
+    PaymentRejected,
+    RepayCapExceeded,
+    UnsupportedChallenge,
 )
 
 server: Server = Server("conduit")
@@ -217,6 +228,64 @@ async def list_tools() -> list[types.Tool]:
                 "Requires an ADMIN-scope API key."
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        types.Tool(
+            name="conduit_fetch_paid",
+            description=(
+                "Fetch a URL that may be protected by an L402 Lightning paywall "
+                "(RFC draft: L402 / formerly LSAT). If the server returns HTTP 402, "
+                "this tool automatically:\n"
+                "  1. Parses the WWW-Authenticate: L402 challenge\n"
+                "  2. Pays the embedded Lightning invoice via the agent wallet\n"
+                "  3. Retries the request with the Authorization: L402 header\n"
+                "  4. Returns the response body together with payment metadata\n\n"
+                "Cached tokens are reused across requests to the same service (keyed "
+                "on macaroon scope, not URL) — a second call to the same paywall "
+                "within the token's validity window costs zero sats. "
+                "A double-spend guard prevents re-paying the same invoice if the "
+                "server rejects a token (RepayCapExceeded). "
+                "Non-402 URLs pass through transparently. "
+                "Over-cap or blocked-domain payments return a structured error "
+                "result rather than crashing.\n\n"
+                "Returns: {status, body, paid_sats, cached, preimage_used, error?}\n"
+                "Requires a WRITE-scope API key (payments must be authorised)."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["agent", "url"],
+                "properties": {
+                    "agent": {
+                        "type": "string",
+                        "description": "Agent name or ID to pay with.",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "URL to fetch. May be L402-protected.",
+                    },
+                    "method": {
+                        "type": "string",
+                        "description": "HTTP method (default GET).",
+                        "default": "GET",
+                    },
+                    "headers": {
+                        "type": "object",
+                        "description": "Optional extra request headers.",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional request body (for POST/PUT).",
+                    },
+                    "max_sats": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": (
+                            "Maximum sats to auto-pay for this request. "
+                            "Over this limit the tool returns an error without paying."
+                        ),
+                    },
+                },
+            },
         ),
     ]
 
@@ -394,9 +463,134 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
                 "fees_by_day": data["fees_by_day"],
             })
 
+        if name == "conduit_fetch_paid":
+            return _handle_fetch_paid(args)
+
         raise ConduitError(f"Unknown tool: {name}", code="UNKNOWN_TOOL")
     except Exception as e:  # noqa: BLE001
         return _err(e)
+
+
+def _handle_fetch_paid(args: dict[str, Any]) -> list[types.TextContent]:
+    """Implementation of the ``conduit_fetch_paid`` MCP tool.
+
+    Fetches a URL via httpx, transparently handling L402 paywalls using the
+    L402Engine from the conduit SDK.  The agent wallet identified by ``args["agent"]``
+    is used to pay invoices.
+
+    Returns a structured JSON result in all cases — unsupported protocols,
+    over-cap payments, and domain errors return ``{error: ..., ...}`` rather
+    than raising so the MCP client receives a machine-readable failure.
+    """
+    try:
+        agent = _agent_for_name_or_id(args["agent"])
+    except (ConduitError, Exception) as exc:  # noqa: BLE001
+        return _ok({"error": str(exc), "status": None, "body": None, "paid_sats": 0,
+                    "cached": False, "preimage_used": None})
+
+    url: str = args["url"]
+    method: str = args.get("method", "GET").upper()
+    extra_headers: dict[str, str] = args.get("headers") or {}
+    req_body: str | None = args.get("body")
+    max_sats: int | None = args.get("max_sats")
+
+    # Build the payer callable: wraps agent.pay and maps to PaidResult.
+    def _pay_invoice(invoice: str, sats: int) -> PaidResult:
+        receipt = agent.pay(to=invoice, sats=sats)
+        return PaidResult(preimage=receipt.preimage, preimage_error=receipt.preimage_error)
+
+    config = L402Config(max_auto_pay_sats=max_sats)
+    engine = L402Engine(pay_invoice=_pay_invoice, config=config)
+
+    # Build the fetcher callable for the engine's fetch_paid method.
+    def _fetcher(
+        fetch_url: str,
+        fetch_method: str,
+        fetch_headers: dict[str, str],
+        fetch_body: str | bytes | None,
+    ) -> tuple[int, dict[str, str], str | bytes]:
+        with httpx.Client(timeout=30.0) as client:
+            content: bytes | None = None
+            if fetch_body is not None:
+                content = fetch_body.encode() if isinstance(fetch_body, str) else fetch_body
+            resp = client.request(
+                method=fetch_method,
+                url=fetch_url,
+                headers=fetch_headers,
+                content=content,
+            )
+        return resp.status_code, dict(resp.headers), resp.text
+
+    try:
+        result: FetchResult = engine.fetch_paid(
+            url=url,
+            fetcher=_fetcher,
+            method=method,
+            headers=extra_headers,
+            body=req_body,
+        )
+        return _ok({
+            "status": result.status,
+            "body": result.body,
+            "paid_sats": result.paid_sats,
+            "cached": result.cached,
+            # Report WHETHER an L402 token was used, not the preimage itself — the
+            # preimage is a bearer secret and the caller doesn't need it (the body
+            # is already fetched). Avoids leaking it into the agent/LLM context.
+            "preimage_used": bool(result.preimage_used),
+        })
+    except UnsupportedChallenge as exc:
+        return _ok({
+            "error": str(exc),
+            "error_type": "UnsupportedChallenge",
+            "status": 402,
+            "body": None,
+            "paid_sats": 0,
+            "cached": False,
+            "preimage_used": None,
+        })
+    except PaymentRejected as exc:
+        return _ok({
+            "error": str(exc),
+            "error_type": "PaymentRejected",
+            "status": 402,
+            "body": None,
+            "paid_sats": 0,
+            "cached": False,
+            "preimage_used": None,
+        })
+    except RepayCapExceeded as exc:
+        return _ok({
+            "error": str(exc),
+            "error_type": "RepayCapExceeded",
+            "status": 402,
+            "body": None,
+            "paid_sats": 0,
+            "cached": False,
+            "preimage_used": None,
+        })
+    except InvalidChallenge as exc:
+        return _ok({
+            "error": str(exc),
+            "error_type": "InvalidChallenge",
+            "status": 402,
+            "body": None,
+            "paid_sats": 0,
+            "cached": False,
+            "preimage_used": None,
+        })
+    except (ConduitError, PolicyViolation) as exc:
+        return _err(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _ok({
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "status": None,
+            "body": None,
+            "paid_sats": 0,
+            "cached": False,
+            "preimage_used": None,
+        })
 
 
 async def serve_stdio() -> None:

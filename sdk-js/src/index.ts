@@ -35,3 +35,33 @@ export type {
   TxStatus,
   Direction,
 } from "./types.js";
+
+// L402 engine
+export {
+  L402Engine,
+  MemoryTokenStore,
+  parseChallenge,
+  agentPayer,
+  // Typed errors
+  L402Error,
+  InvalidChallenge,
+  UnsupportedChallenge,
+  PaymentRejected,
+  RepayCapExceeded,
+  PreimageError,
+} from "./l402.js";
+export type {
+  L402Config,
+  PaidResult,
+  ParsedChallenge,
+  CachedToken,
+  FetchResult,
+  FetcherFn,
+  ITokenStore,
+  PayInvoiceFn,
+  AgentLike,
+} from "./l402.js";
+
+// L402 fetch wrapper
+export { fetchWithL402, createAgentFetch } from "./l402-fetch.js";
+export type { FetchWithL402Options } from "./l402-fetch.js";

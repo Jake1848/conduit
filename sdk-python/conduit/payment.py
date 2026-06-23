@@ -10,6 +10,13 @@ class Receipt:
     Matches the website snippet:
         receipt = agent.pay(...)
         print(receipt.hash, receipt.settled_in_ms)
+
+    The ``preimage`` field is a bearer proof-of-payment secret returned ONLY by
+    the write-scoped POST /pay and /send response (``ReceiptOut`` on the server).
+    It is used to satisfy L402 ``Authorization`` challenges.  It is ``None`` while
+    pending/failed or when the server cannot verify the stored value.
+    ``preimage_error`` is set only when the server stored a preimage but the
+    integrity check failed — it distinguishes "verified absent" from "fault".
     """
 
     id: str
@@ -23,6 +30,9 @@ class Receipt:
     destination: str | None
     memo: str | None
     created_at: datetime
+    # L402 proof-of-payment fields (U1 contract — present only on write-scoped pay/send)
+    preimage: str | None = None
+    preimage_error: str | None = None
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "Receipt":
@@ -38,6 +48,8 @@ class Receipt:
             destination=data.get("destination"),
             memo=data.get("memo"),
             created_at=_parse_dt(data["created_at"]),
+            preimage=data.get("preimage"),
+            preimage_error=data.get("preimage_error"),
         )
 
 

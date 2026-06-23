@@ -34,6 +34,10 @@ export interface Receipt {
   destination: string | null;
   memo: string | null;
   createdAt: Date;
+  /** Preimage of the payment hash, present when the server returns it (L402 flows). */
+  preimage?: string | null;
+  /** Error string if payment settled but no preimage could be retrieved. */
+  preimageError?: string | null;
 }
 
 export interface Invoice {
@@ -101,6 +105,8 @@ export function fromReceipt(r: ReceiptJSON): Receipt {
     destination: r.destination,
     memo: r.memo,
     createdAt: new Date(r.created_at),
+    preimage: r.preimage ?? null,
+    preimageError: r.preimage_error ?? null,
   };
 }
 export function fromInvoice(i: InvoiceJSON): Invoice {
