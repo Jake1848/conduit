@@ -9,6 +9,8 @@ dependencies = [
   "mcp>=0.9.0",
   # The Conduit Python SDK is published as `conduit-btc` (imported as `conduit`).
   "conduit-btc>=0.8.5",
+  # Used by conduit_fetch_paid for HTTP fetching in the L402 tool.
+  "httpx>=0.27",
 ]
 
 [project.scripts]
