@@ -52,6 +52,23 @@ print(receipt.hash, receipt.settled_in_ms)
 print(receipt.fee_sats, receipt.platform_fee_sats)
 ```
 
+## Pay L402-gated APIs automatically
+
+Call a paywalled (`402` / L402) endpoint and let Conduit pay the Lightning toll
+from the agent's wallet, under client-side caps on top of the server policy:
+
+```python
+from conduit import L402Client
+from conduit.l402 import L402Config
+
+with L402Client(agent, config=L402Config(max_auto_pay_sats=2_000)) as http:
+    r = http.fetch("https://api.example.com/paid", sats=210)
+    print(r.status, r.paid_sats, r.body)
+```
+
+The token is cached by macaroon scope (reused across paths, no re-pay) and a
+re-pay guard prevents double-spends. See the repo's `docs/l402.md`.
+
 ## Client-centric API (`ConduitClient`)
 
 Prefer a single client object with explicit methods over the `Agent`

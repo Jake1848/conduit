@@ -60,6 +60,7 @@ lower ones).
 | `conduit_pay`           | Send to a Lightning address (`name@host`), BOLT11 invoice, or raw node pubkey (keysend) | `write` |
 | `conduit_receive`       | Generate an invoice for inbound payment | `write` |
 | `conduit_transactions`  | List recent transactions | `read` |
+| `conduit_fetch_paid`    | Fetch a paywalled (L402) URL, auto-paying the Lightning toll from an agent wallet | `write` |
 | `conduit_fees`          | Report this operator's platform-fee revenue (sats) | `admin` |
 
 > **Scopes, accurately.** Creating agents (`conduit_create_wallet`) and setting

@@ -52,6 +52,23 @@ console.log(receipt.hash, receipt.settledInMs);
 console.log(receipt.feeSats, receipt.platformFeeSats);
 ```
 
+## Pay L402-gated APIs automatically
+
+Call a paywalled (`402` / L402) endpoint and let Conduit pay the Lightning toll
+from the agent's wallet, under client-side caps on top of the server policy:
+
+```ts
+import { createAgentFetch } from "@conduit-btc/sdk";
+
+const fetch402 = createAgentFetch(agent, { maxAutoPaySats: 2000 });
+const res = await fetch402("https://api.example.com/paid", { sats: 210 });
+console.log(res.status, await res.text());
+```
+
+The token is cached by macaroon scope (reused across paths, no re-pay) and a
+re-pay guard prevents double-spends. Decision-parity with the Python SDK. See
+the repo's `docs/l402.md`.
+
 ## Client-centric API (`ConduitClient`)
 
 Prefer a single client object with explicit methods over the `Agent`

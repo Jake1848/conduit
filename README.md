@@ -86,6 +86,21 @@ Collected fees are reported at `GET /v1/fees` (admin) and surfaced in
 | 4 | TypeScript SDK | mirrors the Python interface | `sdk-js/` |
 | 5 | MCP server | exposes Conduit as MCP tools | `mcp-server/` |
 
+## L402 agent payments
+
+Conduit can auto-pay paywalled (`HTTP 402` / **L402**) APIs over Lightning from a
+policy-capped agent wallet — so an agent can transact with the pay-per-request
+web without holding Lightning keys. Two surfaces, one engine:
+
+- **MCP tool** `conduit_fetch_paid` — any MCP agent fetches an L402 URL and the
+  toll is paid transparently (`mcp-server/`).
+- **SDK middleware** `fetch_with_l402` / `L402Client` (Python; `fetchWithL402` in
+  TS) — a drop-in HTTP wrapper for code you control (`sdk-python/`, `sdk-js/`).
+
+The token cache is keyed by the macaroon's scope (not the URL) and a re-pay guard
+prevents silent double-spends; client-side caps layer on top of the server-side
+policy. Full guide: [`docs/l402.md`](docs/l402.md).
+
 ## Quickstart (local, mock LND)
 
 ```bash
