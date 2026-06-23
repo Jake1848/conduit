@@ -23,6 +23,8 @@ from .errors import (
     WebhookVerificationError,
 )
 from .invoice import Invoice
+from .l402 import L402Config, L402Engine, L402Error
+from .l402_fetch import L402Client, fetch_with_l402
 from .payment import Receipt
 from .policy import Policy
 from .transaction import Transaction
@@ -47,6 +49,11 @@ __all__ = [
     "Receipt",
     "Invoice",
     "Transaction",
+    "L402Client",
+    "fetch_with_l402",
+    "L402Engine",
+    "L402Config",
+    "L402Error",
     "ConduitError",
     "AuthenticationError",
     "PermissionDenied",
