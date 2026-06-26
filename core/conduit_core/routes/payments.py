@@ -30,6 +30,7 @@ from ..services.fees import compute_platform_fee
 from ..services.ids import tx_id as new_tx_id
 from ..services.lnd import get_lnd
 from ..services.policy_engine import PaymentRequest, PolicyEngine
+from ..services.preimage import verify_preimage
 from ..services.wallet import (
     is_bolt11,
     is_lightning_address,
@@ -372,11 +373,16 @@ async def _execute_payment(
             "hash": result.payment_hash,
         },
     )
+    preimage, preimage_error = verify_preimage(
+        result.payment_preimage, result.payment_hash
+    )
     return ReceiptOut(
         id=tx_id_local,
         agent_id=agent_id,
         status="settled",
         hash=result.payment_hash,
+        preimage=preimage,
+        preimage_error=preimage_error,
         amount_sats=sats,
         fee_sats=actual_fee,
         platform_fee_sats=platform_fee,
@@ -543,11 +549,18 @@ async def get_payment(
     tx = await session.get(Transaction, payment_id)
     if tx is None or tx.direction != "send":
         raise InvalidInput(f"No payment with id {payment_id}")
+    # This is a read-scoped lookup. The preimage is a bearer secret and is NEVER
+    # returned here — only the write-scoped POST pay/send response hands it back to
+    # the payer. We still run verification to surface a (non-secret) integrity
+    # fault, but discard the preimage itself.
+    _, preimage_error = verify_preimage(tx.payment_preimage, tx.payment_hash)
     return ReceiptOut(
         id=tx.id,
         agent_id=tx.agent_id,
         status=tx.status,  # type: ignore[arg-type]
         hash=tx.payment_hash,
+        preimage=None,
+        preimage_error=preimage_error,
         amount_sats=tx.amount_sats,
         fee_sats=tx.fee_sats,
         platform_fee_sats=tx.platform_fee_sats,

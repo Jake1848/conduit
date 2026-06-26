@@ -105,6 +105,13 @@ if _PROM_AVAILABLE:
         ["worker"],
         registry=REGISTRY,
     )
+    PREIMAGE_INTEGRITY_FAULTS = Counter(
+        "conduit_preimage_integrity_faults_total",
+        "Stored payment preimages that failed sha256(preimage)==payment_hash "
+        "verification before being exposed via the API. Non-zero indicates a "
+        "server-side integrity fault, not a routine missing preimage.",
+        registry=REGISTRY,
+    )
 
 
 def _norm_path(request: Request) -> str:
@@ -182,6 +189,18 @@ def set_lnd_synced(synced: bool) -> None:
     if _PROM_AVAILABLE:
         try:
             LND_SYNCED.set(1 if synced else 0)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def record_preimage_integrity_fault() -> None:
+    """A stored preimage failed sha256(preimage)==payment_hash verification.
+
+    A server-side integrity fault — surfaced rather than silently nulled. Safe
+    no-op when prometheus_client is absent."""
+    if _PROM_AVAILABLE:
+        try:
+            PREIMAGE_INTEGRITY_FAULTS.inc()
         except Exception:  # noqa: BLE001
             pass
 
