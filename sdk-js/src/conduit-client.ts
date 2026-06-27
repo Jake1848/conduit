@@ -2,6 +2,7 @@ import { Conduit } from "./client.js";
 import type { ConduitOptions } from "./client.js";
 import {
   Agent,
+  fromDecision,
   fromInvoice,
   fromLedger,
   fromReceipt,
@@ -18,6 +19,9 @@ import type {
 import type {
   Balance,
   CreateAgentOptions,
+  Decision,
+  DecisionJSON,
+  DecisionOutcome,
   InvoiceJSON,
   ReceiptJSON,
   TransactionJSON,
@@ -168,6 +172,31 @@ export class ConduitClient {
         expiry: opts.expiry ?? 3600,
       }),
     );
+  }
+
+  // ---- decisions (inspectable payment record) ----
+
+  /**
+   * List payment decisions — settled, failed, AND policy/balance/destination-
+   * rejected — newest first, each carrying the margin to every threshold. Pass
+   * `agentId` for one agent's decisions, otherwise the fleet-wide recent feed.
+   * Filter by `outcome` to surface only the rejected attempts.
+   */
+  async listDecisions(
+    opts: { agentId?: string; outcome?: DecisionOutcome; limit?: number } = {},
+  ): Promise<Decision[]> {
+    const query: Record<string, string | number> = { limit: opts.limit ?? 50 };
+    if (opts.outcome) query.outcome = opts.outcome;
+    const path = opts.agentId
+      ? `/v1/agents/${opts.agentId}/decisions`
+      : "/v1/decisions/recent";
+    const d = await this.http.get<{ data: DecisionJSON[]; has_more?: boolean }>(path, query);
+    return d.data.map(fromDecision);
+  }
+
+  /** Fetch a single decision by id (READ scope — never returns a secret). */
+  async getDecision(decisionId: string): Promise<Decision> {
+    return fromDecision(await this.http.get<DecisionJSON>(`/v1/decisions/${decisionId}`));
   }
 
   // ---- operator revenue / metrics ----

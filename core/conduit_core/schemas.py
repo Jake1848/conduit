@@ -209,6 +209,61 @@ class TransactionListOut(BaseModel):
     has_more: bool = False
 
 
+# ---------- Payment decisions ----------
+
+
+class ThresholdOut(BaseModel):
+    """How one quantitative limit was evaluated for a payment — the margin data."""
+
+    rule: str = Field(description="per_transaction | hourly | daily | rate | balance")
+    unit: str = Field(description="sats | count")
+    limit: int
+    attempted: int = Field(description="this payment's contribution to the window")
+    current: int = Field(description="prior usage already in the window")
+    margin_abs: int = Field(description="limit - (current + attempted); < 0 means violated")
+    margin_pct: float = Field(description="margin as a percent of the limit; < 0 means over")
+    violated: bool
+
+
+class DecisionOut(BaseModel):
+    """A durable, inspectable payment decision — settled, failed, OR rejected — with
+    the margin to each threshold, the applied-policy snapshot, and who initiated it.
+    No secret is ever included."""
+
+    id: str
+    agent_id: str
+    outcome: str = Field(description="settled | failed | rejected")
+    reason_code: str | None = None
+    requested_sats: int
+    destination: str | None = None
+    destination_kind: str | None = None
+    allowlist_status: str | None = Field(
+        None, description="allowed | no_allowlist | not_allowlisted | blocklisted"
+    )
+    api_key_id: str | None = Field(None, description="id of the authorizing key — never the secret")
+    caller_tag: str | None = Field(None, description="opt-in caller/tool tag (X-Conduit-Caller)")
+    balance_at_decision_sats: int | None = None
+    thresholds: list[ThresholdOut] = Field(
+        default_factory=list,
+        description="per-limit margin breakdown — present even when ALLOWED (near-miss)",
+    )
+    binding_rule: str | None = Field(None, description="the rule with the tightest margin")
+    min_margin_pct: float | None = Field(
+        None, description="tightest margin across thresholds (% of its limit)"
+    )
+    policy_snapshot: dict | None = Field(
+        None, description="the applied policy at decision time (reconstructable post-edit)"
+    )
+    policy_hash: str | None = None
+    tx_id: str | None = Field(None, description="linked transaction for allowed payments")
+    created_at: datetime
+
+
+class DecisionListOut(BaseModel):
+    data: list[DecisionOut]
+    has_more: bool = False
+
+
 # ---------- Webhooks ----------
 
 class WebhookIn(BaseModel):

@@ -4,9 +4,13 @@ import type {
   AgentJSON,
   Balance,
   CreateAgentOptions,
+  Decision,
+  DecisionJSON,
   InvoiceJSON,
   PayOptions,
   ReceiptJSON,
+  Threshold,
+  ThresholdJSON,
   TransactionJSON,
 } from "./types.js";
 
@@ -131,6 +135,42 @@ export function fromTx(t: TransactionJSON): Transaction {
     settledAt: t.settled_at ? new Date(t.settled_at) : null,
     latencyMs: t.latency_ms,
     createdAt: new Date(t.created_at),
+  };
+}
+
+export function fromThreshold(t: ThresholdJSON): Threshold {
+  return {
+    rule: t.rule,
+    unit: t.unit,
+    limit: t.limit,
+    attempted: t.attempted,
+    current: t.current,
+    marginAbs: t.margin_abs,
+    marginPct: t.margin_pct,
+    violated: t.violated,
+  };
+}
+
+export function fromDecision(d: DecisionJSON): Decision {
+  return {
+    id: d.id,
+    agentId: d.agent_id,
+    outcome: d.outcome,
+    reasonCode: d.reason_code,
+    requestedSats: d.requested_sats,
+    destination: d.destination,
+    destinationKind: d.destination_kind,
+    allowlistStatus: d.allowlist_status,
+    apiKeyId: d.api_key_id,
+    callerTag: d.caller_tag,
+    balanceAtDecisionSats: d.balance_at_decision_sats,
+    thresholds: d.thresholds.map(fromThreshold),
+    bindingRule: d.binding_rule,
+    minMarginPct: d.min_margin_pct,
+    policySnapshot: d.policy_snapshot,
+    policyHash: d.policy_hash,
+    txId: d.tx_id,
+    createdAt: new Date(d.created_at),
   };
 }
 

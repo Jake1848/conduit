@@ -8,6 +8,7 @@ import {
   Box,
   ExternalLink,
   FileText,
+  Gauge,
   KeyRound,
   Landmark,
   LayoutGrid,
@@ -51,6 +52,7 @@ export function Sidebar() {
     { id: "policies", label: "Policies", href: "/policies", icon: ShieldCheck },
     { id: "network", label: "Network", href: "/network", icon: Share2 },
     { id: "audit", label: "Audit Log", href: "/audit", icon: ScrollText },
+    { id: "decisions", label: "Decisions", href: "/decisions", icon: Gauge },
     { id: "webhooks", label: "Webhooks", href: "/webhooks", icon: Webhook },
   ];
   // Pro = optional convenience features. Items always show (so they're

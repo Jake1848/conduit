@@ -35,6 +35,28 @@ class PaymentRequest:
 
 
 @dataclass(frozen=True)
+class ThresholdEval:
+    """How a single quantitative limit was evaluated for this payment.
+
+    Carries BOTH numbers a margin needs: the `limit`, and what this payment was
+    measured against (`current` window usage + this payment's `attempted`
+    contribution). `margin_abs = limit - (current + attempted)`; negative means
+    this rule was (or would be) violated. Recorded even when the payment is
+    ALLOWED — a near-miss that *passed* (tiny positive margin) is the signal a
+    practitioner most wants to surface: same 'allowed' verdict, very different risk.
+    """
+
+    rule: str          # per_transaction | hourly | daily | rate | balance
+    unit: str          # "sats" | "count"
+    limit: int
+    attempted: int     # this payment's contribution to the window (req.sats, or 1 for rate)
+    current: int       # prior usage already in the window (0 for per_transaction / balance)
+    margin_abs: int    # limit - (current + attempted); < 0 means violated
+    margin_pct: float  # margin_abs / limit * 100 (rounded); < 0 means over the limit
+    violated: bool
+
+
+@dataclass(frozen=True)
 class Decision:
     allowed: bool
     code: str
@@ -42,6 +64,12 @@ class Decision:
     used_hour_sats: int = 0
     used_day_sats: int = 0
     minute_count: int = 0
+    # Per-limit margin breakdown for the inspectable decision record. Populated for
+    # every CONFIGURED quantitative rule REACHED: all of them on allow; just
+    # per_transaction on a per-tx block; and all window rules (hourly/daily/rate) on
+    # a window-rule block, since those are computed together before any is checked.
+    # Empty for non-quantitative rejections (disabled / memo / allowlist / blocklist).
+    thresholds: tuple[ThresholdEval, ...] = ()
 
 
 # Stable codes — also documented in docs/reference/errors.md
@@ -83,6 +111,31 @@ async def _window_sum(
         return 0, 0
     sats, count = row
     return int(sats or 0), int(count or 0)
+
+
+def _eval_threshold(
+    rule: str, unit: str, limit: int | None, current: int, attempted: int
+) -> ThresholdEval | None:
+    """Build a ThresholdEval, or None if the limit isn't configured (None/0).
+
+    `margin_abs = limit - (current + attempted)`. A near-miss-that-passed has a
+    small positive margin; a violation has a negative one.
+    """
+    if not limit:  # unconfigured rule — nothing to measure against
+        return None
+    limit = int(limit)
+    projected = int(current) + int(attempted)
+    margin = limit - projected
+    return ThresholdEval(
+        rule=rule,
+        unit=unit,
+        limit=limit,
+        attempted=int(attempted),
+        current=int(current),
+        margin_abs=margin,
+        margin_pct=round(margin / limit * 100, 2),
+        violated=margin < 0,
+    )
 
 
 # ---------- Engine ----------
@@ -148,12 +201,22 @@ class PolicyEngine:
                 f"Destination not in allowlist ({len(allow)} entries): {req.destination}",
             )
 
+        # ----- Quantitative rules → accumulate margin thresholds for the record -----
+        # Thresholds are built in evaluation order so a block still carries the
+        # binding rule's margin, and ALL configured rules are carried on allow (so a
+        # near-miss-that-passed is visible). The allow/deny conditions below are
+        # byte-for-byte unchanged — the margin work is purely additive.
+        thresholds: list[ThresholdEval] = []
+        per_tx = _eval_threshold("per_transaction", "sats", policy.max_per_transaction, 0, req.sats)
+        if per_tx:
+            thresholds.append(per_tx)
         if policy.max_per_transaction and req.sats > policy.max_per_transaction:
             return Decision(
                 False,
                 CODE_PER_TX_EXCEEDED,
                 f"Payment of {req.sats} sats exceeds per-transaction limit of "
                 f"{policy.max_per_transaction} sats.",
+                thresholds=tuple(thresholds),
             )
 
         now = datetime.now(UTC)
@@ -161,15 +224,27 @@ class PolicyEngine:
         day_sats, _ = await _window_sum(self.session, req.agent_id, now - timedelta(days=1))
         _, minute_count = await _window_sum(self.session, req.agent_id, now - timedelta(minutes=1))
 
+        for t in (
+            _eval_threshold("hourly", "sats", policy.max_per_hour, hour_sats, req.sats),
+            _eval_threshold("daily", "sats", policy.max_per_day, day_sats, req.sats),
+            _eval_threshold("rate", "count", policy.max_per_minute_count, minute_count, 1),
+        ):
+            if t:
+                thresholds.append(t)
+        common = dict(
+            used_hour_sats=hour_sats,
+            used_day_sats=day_sats,
+            minute_count=minute_count,
+            thresholds=tuple(thresholds),
+        )
+
         if policy.max_per_hour and hour_sats + req.sats > policy.max_per_hour:
             return Decision(
                 False,
                 CODE_HOURLY_EXCEEDED,
                 f"Payment of {req.sats} sats would exceed hourly limit of "
                 f"{policy.max_per_hour} sats (used: {hour_sats}).",
-                used_hour_sats=hour_sats,
-                used_day_sats=day_sats,
-                minute_count=minute_count,
+                **common,
             )
         if policy.max_per_day and day_sats + req.sats > policy.max_per_day:
             return Decision(
@@ -177,9 +252,7 @@ class PolicyEngine:
                 CODE_DAILY_EXCEEDED,
                 f"Payment of {req.sats} sats would exceed daily limit of "
                 f"{policy.max_per_day} sats (used: {day_sats}).",
-                used_hour_sats=hour_sats,
-                used_day_sats=day_sats,
-                minute_count=minute_count,
+                **common,
             )
         if policy.max_per_minute_count and minute_count + 1 > policy.max_per_minute_count:
             return Decision(
@@ -187,31 +260,31 @@ class PolicyEngine:
                 CODE_RATE_EXCEEDED,
                 f"Would exceed rate limit of {policy.max_per_minute_count} payments/minute "
                 f"(current: {minute_count}).",
-                used_hour_sats=hour_sats,
-                used_day_sats=day_sats,
-                minute_count=minute_count,
+                **common,
             )
 
-        return Decision(
-            True,
-            CODE_OK,
-            "Allowed",
-            used_hour_sats=hour_sats,
-            used_day_sats=day_sats,
-            minute_count=minute_count,
-        )
+        return Decision(True, CODE_OK, "Allowed", **common)
 
     async def _rate_only(self, req: PaymentRequest) -> Decision:
         now = datetime.now(UTC)
         _, minute_count = await _window_sum(self.session, req.agent_id, now - timedelta(minutes=1))
+        rate = _eval_threshold("rate", "count", 60, minute_count, 1)
+        thresholds = (rate,) if rate else ()
         if minute_count + 1 > 60:
             return Decision(
                 False,
                 CODE_RATE_EXCEEDED,
                 "Would exceed default 60 payments/minute rate limit.",
                 minute_count=minute_count,
+                thresholds=thresholds,
             )
-        return Decision(True, CODE_OK, "Allowed (no policy attached; default rate limit only).")
+        return Decision(
+            True,
+            CODE_OK,
+            "Allowed (no policy attached; default rate limit only).",
+            minute_count=minute_count,
+            thresholds=thresholds,
+        )
 
 
 # ---------- helpers ----------

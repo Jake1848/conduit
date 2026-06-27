@@ -105,6 +105,25 @@ if _PROM_AVAILABLE:
         ["worker"],
         registry=REGISTRY,
     )
+    DECISION_RECORD_FAILURES = Counter(
+        "conduit_decision_record_write_failures_total",
+        "Best-effort payment Decision Record writes that failed. A decision-record "
+        "write is intentionally fire-and-forget on a separate session so it can "
+        "never block a payment; a non-zero value means some attempts have no "
+        "durable audit row (the money path was unaffected). Alert if it climbs.",
+        registry=REGISTRY,
+    )
+
+
+def record_decision_write_failure() -> None:
+    """A best-effort Decision Record write failed (audit gap, money path unaffected).
+
+    Safe no-op when prometheus_client is absent; never raises."""
+    if _PROM_AVAILABLE:
+        try:
+            DECISION_RECORD_FAILURES.inc()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _norm_path(request: Request) -> str:

@@ -11,6 +11,7 @@ const META: Record<string, { title: string; sub: string }> = {
   "/": { title: "Overview", sub: "Real-time fleet metrics" },
   "/wallets": { title: "Wallets", sub: "Agent wallet directory" },
   "/audit": { title: "Audit Log", sub: "Signed transaction record · all agents" },
+  "/decisions": { title: "Decisions", sub: "Payment decision record · margins & guardrails" },
   "/keys": { title: "API Keys", sub: "Programmatic access credentials" },
   "/policies": { title: "Policies", sub: "Spending rule sets" },
   "/network": { title: "Network", sub: "Lightning routing topology" },

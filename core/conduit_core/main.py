@@ -20,6 +20,7 @@ from .observability import (
 )
 from .routes import (
     agents,
+    decisions,
     fees,
     invoices,
     keys,
@@ -247,6 +248,7 @@ app.include_router(policies.router)
 app.include_router(payments.router)
 app.include_router(invoices.router)
 app.include_router(transactions.router)
+app.include_router(decisions.router)
 app.include_router(webhooks.router)
 app.include_router(metrics.router)
 app.include_router(fees.router)

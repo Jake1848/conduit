@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -223,5 +224,67 @@ class IdempotencyRecord(Base):
     )
 
 
+class PaymentDecision(Base):
+    """Durable, inspectable record of EVERY payment decision — settled, failed,
+    AND policy/balance/destination-rejected.
+
+    Unlike `transactions` (which only ever holds rows for payments that PASSED the
+    gate), this table records rejected attempts too — the thing a practitioner most
+    needs to inspect later — together with the MARGIN to each threshold (how close
+    the attempt came to every limit, recorded even when ALLOWED so a near-miss-that-
+    passed is visible), the applied policy snapshot+hash (so a later policy edit can
+    never make a past decision un-reconstructable; policies aren't versioned), and
+    which key/caller initiated it.
+
+    NEVER stores secrets: `api_key_id` (the id, never the key), `destination`
+    (public), an opt-in short `caller_tag` (never a prompt), and a policy snapshot
+    that carries no secrets. No preimage, seed, or key plaintext is ever written.
+
+    Written best-effort on a SEPARATE session AFTER the money outcome is committed,
+    so a decision-record write can never block or alter the money path.
+    """
+
+    __tablename__ = "payment_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
+    # settled | failed | rejected
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    # policy CODE (rejected) / failure reason (failed) / null on a clean settle
+    reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    requested_sats: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destination: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # bolt11 | keysend | address
+    destination_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # allowed | no_allowlist | not_allowlisted | blocklisted
+    allowlist_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # The id of the API key that authorized the attempt — NEVER the key plaintext.
+    api_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Opt-in short caller/tool identifier (X-Conduit-Caller). NEVER a prompt dump.
+    caller_tag: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    balance_at_decision_sats: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # JSON array of per-limit margin entries:
+    # {rule, unit, limit, attempted, current, margin_abs, margin_pct, violated}
+    thresholds_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # the rule with the tightest (smallest) margin — the headline limit for this decision
+    binding_rule: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # tightest margin across thresholds as a % of its limit; null if no quantitative rule
+    min_margin_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # JSON snapshot of the applied policy at decision time + its sha256, so the
+    # decision is reconstructable even after the policy is edited in place.
+    policy_snapshot_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # link to the transactions row for ALLOWED payments (null on a rejection)
+    tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+
 Index("ix_tx_agent_created", Transaction.agent_id, Transaction.created_at)
 Index("ix_tx_agent_status", Transaction.agent_id, Transaction.status)
+# Decision-record query paths: per-agent timeline, outcome filter, and the
+# "show me the tightest near-misses" sort.
+Index("ix_decisions_agent_created", PaymentDecision.agent_id, PaymentDecision.created_at)
+Index("ix_decisions_outcome_created", PaymentDecision.outcome, PaymentDecision.created_at)
+Index("ix_decisions_min_margin", PaymentDecision.min_margin_pct)

@@ -34,4 +34,13 @@ export type {
   Scope,
   TxStatus,
   Direction,
+  Decision,
+  Threshold,
+  DecisionJSON,
+  ThresholdJSON,
+  DecisionOutcome,
+  DestinationKind,
+  AllowlistStatus,
+  ThresholdRule,
+  ThresholdUnit,
 } from "./types.js";

@@ -43,6 +43,22 @@ before reporting an issue.
 - Vulnerabilities in third-party dependencies that have no exploitable path through
   Conduit (report those upstream).
 
+## Authorization guarantees
+
+- **A paying key cannot raise its own limits.** Spending policy is mutated only by an
+  `admin`-scope key (`POST`/`PUT`/`DELETE /v1/agents/{id}/policy`). The `write` scope an
+  agent pays with cannot edit its caps, allowlist, or kill switch — so a compromised or
+  prompt-injected agent can spend at most *up to* the limits you set, never lift them.
+  The guarantee is precisely "a `write` key can't touch policy"; provision agents with
+  `write` keys (not `admin` keys) to rely on it. Authorization is scope-based, not
+  per-agent — see the README "Authorization model" section for the single-operator
+  boundary.
+- **Every payment decision is durably recorded.** Each attempt — settled, failed, and
+  rejected — writes an inspectable record (the margin to each limit, the applied policy
+  snapshot, the authorizing key id and optional caller tag). No secret is ever stored or
+  returned: no preimage, seed, or key plaintext; `api_key_id` is an id, never the key;
+  the caller tag is an opt-in short string, never prompt content.
+
 ## Reporting a Vulnerability
 
 **Please report privately. Do not open a public GitHub issue, pull request, or

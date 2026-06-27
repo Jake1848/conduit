@@ -175,6 +175,21 @@ boundary:
 - An `admin` key can create/delete agents, move balances, manage policies and
   webhooks, and mint keys across the whole instance.
 
+**An agent's paying key cannot change its own limits.** Spending policy is mutated
+only by an `admin` key (`POST`/`PUT`/`DELETE /v1/agents/{id}/policy`); the `write`
+scope an agent pays with cannot raise its own caps, edit its allowlist, or flip the
+kill switch. So a compromised or prompt-injected agent can spend *up to* the limits
+you set — never lift them. (The guarantee is precisely "a `write` key can't touch
+policy"; provision agents with `write` keys, not `admin` keys, to rely on it.)
+
+**Every payment decision is inspectable after the fact.** Each attempt — settled,
+failed, *and* policy/balance-rejected — writes a durable record with the **margin
+to each limit** (how close it came, recorded even when it passed), the applied
+policy snapshot, and which key/caller initiated it. Query it via `GET
+/v1/decisions/recent`, `GET /v1/agents/{id}/decisions`, the SDKs' `list_decisions`,
+the `conduit_decisions` MCP tool, or the console **Decisions** view. No secret
+(preimage/key/seed) is ever stored. See `CHANGELOG.md` [0.9.0].
+
 There is **no per-agent boundary**: a key is not tied to a specific agent, and
 no route filters by which key created or "owns" an agent. Agents are an
 accounting and policy unit, **not a security boundary between mutually
