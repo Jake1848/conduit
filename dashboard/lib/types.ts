@@ -210,5 +210,50 @@ export interface Webhook {
   created_at?: string;
 }
 
+// ---- /v1/decisions (inspectable payment Decision Record) ----
+export type DecisionOutcome = "settled" | "failed" | "rejected";
+export type DestinationKind = "bolt11" | "keysend" | "address";
+export type AllowlistStatus = "allowed" | "no_allowlist" | "not_allowlisted" | "blocklisted";
+export type ThresholdRule = "per_transaction" | "hourly" | "daily" | "rate" | "balance";
+export type ThresholdUnit = "sats" | "count";
+
+/** How one quantitative limit was evaluated for a payment — the margin data.
+ *  margin_abs = limit − (current + attempted); negative ⇒ violated. Recorded even
+ *  when the payment was ALLOWED, so a near-miss-that-passed is inspectable. */
+export interface Threshold {
+  rule: ThresholdRule;
+  unit: ThresholdUnit;
+  limit: number;
+  attempted: number; // this payment's contribution to the window
+  current: number; // prior usage already in the window
+  margin_abs: number; // limit − (current + attempted); < 0 means violated
+  margin_pct: number; // margin as a percent of the limit; < 0 means over
+  violated: boolean;
+}
+
+/** A durable, inspectable payment decision — settled, failed, OR rejected — with
+ *  the margin to each threshold, the applied-policy snapshot, and who initiated it.
+ *  Never carries a secret/preimage. */
+export interface Decision {
+  id: string; // "dec_…"
+  agent_id: string; // "agt_…"
+  outcome: DecisionOutcome;
+  reason_code: string | null;
+  requested_sats: number;
+  destination: string | null;
+  destination_kind: DestinationKind | null;
+  allowlist_status: AllowlistStatus | null;
+  api_key_id: string | null; // id of the authorizing key — never the secret
+  caller_tag: string | null; // opt-in caller/tool tag (X-Conduit-Caller)
+  balance_at_decision_sats: number | null;
+  thresholds: Threshold[];
+  binding_rule: string | null; // the rule with the tightest margin
+  min_margin_pct: number | null; // tightest margin across thresholds (% of its limit)
+  policy_snapshot: Record<string, unknown> | null;
+  policy_hash: string | null;
+  tx_id: string | null; // linked transaction for allowed payments
+  created_at: string; // ISO
+}
+
 /** Access tier the connected key has, derived from probing the API. */
 export type AccessTier = "admin" | "member";

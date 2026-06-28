@@ -60,15 +60,55 @@ lower ones).
 | `conduit_pay`           | Send to a Lightning address (`name@host`), BOLT11 invoice, or raw node pubkey (keysend) | `write` |
 | `conduit_receive`       | Generate an invoice for inbound payment | `write` |
 | `conduit_transactions`  | List recent transactions | `read` |
+| `conduit_decisions`     | Inspect policy-engine decisions + the margin to each limit (why a payment was blocked / how close it came) | `read` |
 | `conduit_fees`          | Report this operator's platform-fee revenue (sats) | `admin` |
 
 > **Scopes, accurately.** Creating agents (`conduit_create_wallet`) and setting
 > policies (`conduit_attach_policy`) are **admin** operations — an `admin`-scope
 > key is required, not merely `write`. Sending payments and generating invoices
-> require `write`. Reading balances and transactions require `read`. The
+> require `write`. Reading balances, transactions, and decisions require `read`. The
 > platform-fee report (`conduit_fees`) requires `admin`. If you want an agent to
 > *spend* but never *reconfigure* itself, give it a `write` key — it can `pay`
 > and `receive`, but not create wallets, change policies, or read fee revenue.
+
+### `conduit_decisions`
+
+Read-only inspection of the policy engine's **Decision Record**. Every payment
+attempt — `settled`, `failed`, **and** policy/balance/destination-`rejected` — is
+recorded with the **margin to each threshold**, so you can ask *why was this
+blocked* and *how close was it to the limit*. Routing by input:
+
+- `decision_id` given → `GET /v1/decisions/{id}` (one decision)
+- else `agent` given → `GET /v1/agents/{agent}/decisions` (one wallet, newest first)
+- else → `GET /v1/decisions/recent` (the whole fleet)
+
+Filter a list with `outcome` (`settled` | `failed` | `rejected`) to surface only
+the rejected attempts. Each decision carries `thresholds[]` with `margin_abs`
+(`= limit − (current + attempted)`; **negative = violated**) and `binding_rule` —
+present even when the payment was **allowed** (a near-miss-that-passed). No
+secret/preimage is ever returned. Example (single decision):
+
+```json
+{
+  "decision": {
+    "id": "dec_9f3c...",
+    "agent_id": "agt_abc...",
+    "outcome": "rejected",
+    "reason_code": "PER_TRANSACTION_LIMIT_EXCEEDED",
+    "requested_sats": 5000,
+    "thresholds": [
+      { "rule": "per_transaction", "unit": "sats", "limit": 1000,
+        "attempted": 5000, "current": 0, "margin_abs": -4000,
+        "margin_pct": -400.0, "violated": true }
+    ],
+    "binding_rule": "per_transaction",
+    "min_margin_pct": -400.0,
+    "created_at": "2026-06-27T00:00:00Z"
+  }
+}
+```
+
+A list call returns `{ "decisions": [ ... ], "has_more": false }`.
 
 ### `conduit_fees`
 

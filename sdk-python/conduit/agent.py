@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from .client import Conduit, default_client
+from .decision import Decision
 from .invoice import Invoice
 from .payment import Receipt, _parse_dt
 from .policy import Policy
@@ -254,6 +255,16 @@ class Agent:
             params["direction"] = direction
         data = self._client.get(f"/v1/agents/{self.id}/transactions", params=params)
         return [Transaction.from_api(item) for item in data.get("data", [])]
+
+    def decisions(self, *, outcome: str | None = None, limit: int = 50) -> list[Decision]:
+        """This agent's inspectable payment decisions — settled, failed, AND
+        rejected — newest first, each with the margin to every threshold. Filter
+        by `outcome` to surface only the rejected attempts worth inspecting."""
+        params: dict[str, Any] = {"limit": limit}
+        if outcome:
+            params["outcome"] = outcome
+        data = self._client.get(f"/v1/agents/{self.id}/decisions", params=params)
+        return [Decision.from_api(item) for item in data.get("data", [])]
 
     def deactivate(self) -> None:
         self._client.delete(f"/v1/agents/{self.id}")

@@ -7,6 +7,8 @@ import type {
   ApiKey,
   ApiKeyCreated,
   Balance,
+  Decision,
+  DecisionOutcome,
   Fees,
   Health,
   Invoice,
@@ -241,6 +243,24 @@ export const api = {
   ) => request<Policy>(`/v1/agents/${id}/policy`, { method: "POST", body }),
   deletePolicy: (id: string) =>
     request<void>(`/v1/agents/${id}/policy`, { method: "DELETE" }),
+
+  // ---- decisions (inspectable payment Decision Record; READ scope, never a secret) ----
+  // Fleet feed via /v1/decisions/recent, or one agent's history via
+  // /v1/agents/{id}/decisions. The `outcome` filter is applied server-side so a
+  // rejected attempt is never truncated out of the client's window.
+  getDecisions: (
+    { agentId, outcome, limit = 100 }: { agentId?: string; outcome?: DecisionOutcome; limit?: number } = {},
+    signal?: AbortSignal,
+  ) => {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (outcome) qs.set("outcome", outcome);
+    const path = agentId
+      ? `/v1/agents/${agentId}/decisions?${qs}`
+      : `/v1/decisions/recent?${qs}`;
+    return request<{ data: Decision[]; has_more: boolean }>(path, { signal });
+  },
+  getDecision: (id: string, signal?: AbortSignal) =>
+    request<Decision>(`/v1/decisions/${id}`, { signal }),
 
   // ---- invoices ----
   createInvoice: (agentId: string, amount: number, memo?: string) =>

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -26,6 +26,16 @@ from ..errors import (
 )
 from ..schemas import PaymentPayIn, PaymentSendIn, ReceiptOut
 from ..services import idempotency
+from ..services.decision_record import (
+    OUTCOME_FAILED,
+    OUTCOME_REJECTED,
+    OUTCOME_SETTLED,
+    DecisionSnapshot,
+    allowlist_status_for,
+    balance_threshold,
+    record_decision,
+    snapshot_policy,
+)
 from ..services.fees import compute_platform_fee
 from ..services.ids import tx_id as new_tx_id
 from ..services.lnd import get_lnd
@@ -130,6 +140,9 @@ async def _execute_payment(
     payment_hash: str,
     keysend_preimage: bytes | None = None,
     bolt11_send_amount: int | None = None,
+    api_key_id: str | None = None,
+    caller_tag: str | None = None,
+    destination_kind: str | None = None,
 ) -> ReceiptOut:
     """Run a payment.
 
@@ -152,9 +165,22 @@ async def _execute_payment(
     )
     debit_total = sats + fee_budget + platform_fee
 
+    # The destination form, for the decision record. Resolved here so both the
+    # rejection and the success records carry it.
+    dkind = destination_kind or ("bolt11" if invoice else "keysend")
+
     # ----- Phase 1: locked decision + debit + pending row -----
     # SQLAlchemy 2.0 implicitly begins a transaction on the first query.
     # The row lock from with_for_update() is held until commit().
+    #
+    # `snapshot` captures the inspectable Decision Record at decision time (margin
+    # to each threshold + applied-policy snapshot/hash + who initiated it). It is
+    # built BEFORE the debit, so balance_at_decision is the pre-debit balance and no
+    # money has moved when it's captured. On a rejection it is persisted on a
+    # SEPARATE session AFTER the rollback (below); on success, after the settle/fail
+    # commit (Phase 3). The audit write can never block or alter the money path.
+    snapshot: DecisionSnapshot | None = None
+    reject_reason: str | None = None
     try:
         agent_row = await session.execute(
             select(Agent).where(Agent.id == agent_id).with_for_update()
@@ -163,6 +189,19 @@ async def _execute_payment(
         if agent is None:
             raise AgentNotFound(f"No agent with id {agent_id}")
         if not agent.active:
+            # A pre-policy gate rejection — record it with a minimal snapshot (no
+            # policy/window data is loaded for a frozen agent).
+            snapshot = DecisionSnapshot(
+                agent_id=agent_id,
+                requested_sats=sats,
+                destination=destination,
+                destination_kind=dkind,
+                allowlist_status=None,
+                api_key_id=api_key_id,
+                caller_tag=caller_tag,
+                balance_at_decision_sats=int(agent.balance_sats or 0),
+            )
+            reject_reason = "AGENT_INACTIVE"
             raise PolicyViolation(f"Agent {agent_id} is inactive", code="AGENT_INACTIVE")
 
         policy_row = await session.execute(
@@ -181,6 +220,24 @@ async def _execute_payment(
                 dest_pubkey=dest_pubkey,
             ),
         )
+
+        # Snapshot the decision (margin thresholds + policy snapshot/hash) before any
+        # debit. balance_at_decision is the pre-debit balance.
+        policy_snap, policy_hash = snapshot_policy(policy)
+        snapshot = DecisionSnapshot(
+            agent_id=agent_id,
+            requested_sats=sats,
+            destination=destination,
+            destination_kind=dkind,
+            allowlist_status=allowlist_status_for(policy, decision),
+            api_key_id=api_key_id,
+            caller_tag=caller_tag,
+            balance_at_decision_sats=int(agent.balance_sats or 0),
+            thresholds=decision.thresholds,
+            policy_snapshot=policy_snap,
+            policy_hash=policy_hash,
+        )
+
         if not decision.allowed:
             log.warning(
                 "policy_violation",
@@ -189,6 +246,7 @@ async def _execute_payment(
                 sats=sats,
                 destination=destination,
             )
+            reject_reason = decision.code
             raise PolicyViolation(
                 decision.detail,
                 code=decision.code,
@@ -199,6 +257,12 @@ async def _execute_payment(
             )
 
         if (agent.balance_sats or 0) < debit_total:
+            # Balance rejection — append the balance margin so the record shows by
+            # how much the debit overran the available balance.
+            snapshot.thresholds = snapshot.thresholds + (
+                balance_threshold(agent.balance_sats or 0, debit_total),
+            )
+            reject_reason = "INSUFFICIENT_BALANCE"
             raise InsufficientBalance(
                 f"Agent balance {agent.balance_sats} sats < required {debit_total} "
                 f"({sats} + {fee_budget} routing budget + {platform_fee} platform fee). "
@@ -226,6 +290,13 @@ async def _execute_payment(
         )
         session.add(tx)
         await session.commit()  # releases the row lock
+    except (PolicyViolation, InsufficientBalance):
+        # The money path is rolled back (no debit, no row). Record the rejection on a
+        # SEPARATE session AFTER the lock is released — best-effort, never raises.
+        await session.rollback()
+        if snapshot is not None:
+            await record_decision(snapshot, OUTCOME_REJECTED, reason_code=reject_reason)
+        raise
     except Exception:
         await session.rollback()
         raise
@@ -276,6 +347,12 @@ async def _execute_payment(
         except Exception:
             await session.rollback()
             raise
+        # Durable Decision Record for the failed outcome — separate session,
+        # best-effort, after the refund commit (can never affect the refund).
+        if snapshot is not None:
+            await record_decision(
+                snapshot, OUTCOME_FAILED, reason_code="PAYMENT_FAILED", tx_id=tx_id_local
+            )
         fire_webhook(
             "payment.failed",
             {
@@ -312,6 +389,11 @@ async def _execute_payment(
                 await session.commit()
         except Exception:
             await session.rollback()
+        # Record the unknown-state outcome as failed (separate session, best-effort).
+        if snapshot is not None:
+            await record_decision(
+                snapshot, OUTCOME_FAILED, reason_code="NEEDS_RECONCILIATION", tx_id=tx_id_local
+            )
         raise PaymentFailed(
             "Payment to LND ended in an UNKNOWN state — the Lightning payment "
             "may or may not have settled. Balance has NOT been refunded to "
@@ -362,6 +444,18 @@ async def _execute_payment(
     except Exception:
         await session.rollback()
         raise
+
+    # Durable Decision Record for the settled outcome — separate session,
+    # best-effort, AFTER the money commit, so it can never affect the settlement.
+    # NOTE: this is awaited inline (it adds one small insert to the response path).
+    # It is deliberately NOT offloaded to a BackgroundTask/create_task: the reject
+    # and fail paths record by RAISING, where a background task attached to the
+    # success Response would never run — inline keeps capture uniform and
+    # deterministic across all outcomes. The money is already committed, and a
+    # failed/slow audit write is swallowed + metered, so it can delay but never
+    # break the response. Revisit if audit-write latency becomes material at scale.
+    if snapshot is not None:
+        await record_decision(snapshot, OUTCOME_SETTLED, tx_id=tx_id_local)
 
     fire_webhook(
         "payment.settled",
@@ -428,47 +522,80 @@ async def send_payment(
     request: Request,
     session: AsyncSession = Depends(get_session),
     api_key: APIKey = Depends(require_scope("write")),
+    caller: str | None = Header(default=None, alias="X-Conduit-Caller"),
 ):
     async def run() -> ReceiptOut:
-        if body.payment_request:
-            if not is_bolt11(body.payment_request):
-                raise InvalidInput("payment_request is not a BOLT11 invoice")
-            decoded = await get_lnd().decode_invoice(body.payment_request)
-            sats = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
-            return await _execute_payment(
-                session=session,
-                agent_id=body.agent_id,
-                sats=sats,
-                destination=body.payment_request,
-                memo=body.memo,
-                metadata=body.metadata,
-                invoice=body.payment_request,
-                dest_pubkey=decoded.destination,
-                payment_hash=decoded.payment_hash,
-                # Only a zero-amount invoice needs the amount forwarded to LND.
-                bolt11_send_amount=(sats if decoded.amount_sats == 0 else None),
+        try:
+            if body.payment_request:
+                if not is_bolt11(body.payment_request):
+                    raise InvalidInput("payment_request is not a BOLT11 invoice")
+                decoded = await get_lnd().decode_invoice(body.payment_request)
+                sats = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
+                return await _execute_payment(
+                    session=session,
+                    agent_id=body.agent_id,
+                    sats=sats,
+                    destination=body.payment_request,
+                    memo=body.memo,
+                    metadata=body.metadata,
+                    invoice=body.payment_request,
+                    dest_pubkey=decoded.destination,
+                    payment_hash=decoded.payment_hash,
+                    # Only a zero-amount invoice needs the amount forwarded to LND.
+                    bolt11_send_amount=(sats if decoded.amount_sats == 0 else None),
+                    api_key_id=api_key.id,
+                    caller_tag=caller,
+                    destination_kind="bolt11",
+                )
+            if body.dest_pubkey:
+                if not body.sats:
+                    raise InvalidInput("Keysend requires `sats`")
+                # Pre-generate the preimage so we know the payment_hash up-front.
+                # We pass the SAME preimage to LND so the on-network payment hash
+                # matches what we recorded.
+                preimage = secrets.token_bytes(32)
+                payment_hash = hashlib.sha256(preimage).hexdigest()
+                return await _execute_payment(
+                    session=session,
+                    agent_id=body.agent_id,
+                    sats=body.sats,
+                    destination=body.dest_pubkey,
+                    memo=body.memo,
+                    metadata=body.metadata,
+                    invoice=None,
+                    dest_pubkey=body.dest_pubkey,
+                    payment_hash=payment_hash,
+                    keysend_preimage=preimage,
+                    api_key_id=api_key.id,
+                    caller_tag=caller,
+                    destination_kind="keysend",
+                )
+            raise InvalidInput("Either payment_request or dest_pubkey is required")
+        except InvalidInput:
+            # Malformed/unsupported request rejected at the edge (before the policy
+            # gate). Record it on a separate session so even a never-reached-the-gate
+            # attempt leaves a durable trace — no funds moved.
+            await record_decision(
+                DecisionSnapshot(
+                    agent_id=body.agent_id,
+                    requested_sats=int(body.sats or 0),
+                    destination=(body.payment_request or body.dest_pubkey or "<unspecified>"),
+                    destination_kind=(
+                        "bolt11"
+                        if body.payment_request
+                        else "keysend"
+                        if body.dest_pubkey
+                        else None
+                    ),
+                    allowlist_status=None,
+                    api_key_id=api_key.id,
+                    caller_tag=caller,
+                    balance_at_decision_sats=None,
+                ),
+                OUTCOME_REJECTED,
+                reason_code="INVALID_REQUEST",
             )
-        if body.dest_pubkey:
-            if not body.sats:
-                raise InvalidInput("Keysend requires `sats`")
-            # Pre-generate the preimage so we know the payment_hash up-front.
-            # We pass the SAME preimage to LND so the on-network payment hash
-            # matches what we recorded.
-            preimage = secrets.token_bytes(32)
-            payment_hash = hashlib.sha256(preimage).hexdigest()
-            return await _execute_payment(
-                session=session,
-                agent_id=body.agent_id,
-                sats=body.sats,
-                destination=body.dest_pubkey,
-                memo=body.memo,
-                metadata=body.metadata,
-                invoice=None,
-                dest_pubkey=body.dest_pubkey,
-                payment_hash=payment_hash,
-                keysend_preimage=preimage,
-            )
-        raise InvalidInput("Either payment_request or dest_pubkey is required")
+            raise
 
     return await _idempotent(request, session, api_key, body, run)
 
@@ -479,6 +606,7 @@ async def pay(
     request: Request,
     session: AsyncSession = Depends(get_session),
     api_key: APIKey = Depends(require_scope("write")),
+    caller: str | None = Header(default=None, alias="X-Conduit-Caller"),
 ):
     """Pay a Lightning address (`name@host`) or a BOLT11 invoice."""
 
@@ -487,41 +615,62 @@ async def pay(
         dest_pubkey: str | None = None
         payment_hash: str | None = None
         bolt11_send_amount: int | None = None
+        dkind = "bolt11"
 
-        if is_lightning_address(body.to):
-            invoice = await resolve_lightning_address_to_invoice(
-                body.to, body.sats, body.memo
+        try:
+            if is_lightning_address(body.to):
+                dkind = "address"
+                invoice = await resolve_lightning_address_to_invoice(
+                    body.to, body.sats, body.memo
+                )
+                decoded = await get_lnd().decode_invoice(invoice)
+                # SECURITY: LNURL-pay servers can return an invoice for a different
+                # amount than we asked for. Refuse to pay anything other than what
+                # the caller authorized.
+                if decoded.amount_sats > 0 and decoded.amount_sats != body.sats:
+                    raise PaymentFailed(
+                        f"Lightning address {body.to} returned an invoice for "
+                        f"{decoded.amount_sats} sats but we requested {body.sats}. "
+                        "Refusing to pay — verify the destination.",
+                        lightning_address=body.to,
+                        invoice_amount_sats=decoded.amount_sats,
+                        requested_sats=body.sats,
+                    )
+                dest_pubkey = decoded.destination
+                payment_hash = decoded.payment_hash
+            elif is_bolt11(body.to):
+                invoice = body.to
+                decoded = await get_lnd().decode_invoice(invoice)
+                # Same defense as /send for BOLT11.
+                sats_to_use = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
+                if sats_to_use != body.sats:
+                    raise InvalidInput(
+                        f"`to` is a BOLT11 invoice for {decoded.amount_sats} sats but "
+                        f"`sats`={body.sats}. They must match."
+                    )
+                dest_pubkey = decoded.destination
+                payment_hash = decoded.payment_hash
+                bolt11_send_amount = body.sats if decoded.amount_sats == 0 else None
+            else:
+                raise InvalidInput(f"Unsupported destination format: {body.to}")
+        except InvalidInput:
+            # Malformed/unsupported destination rejected at the edge — record it
+            # (no funds moved) so it's durably inspectable.
+            await record_decision(
+                DecisionSnapshot(
+                    agent_id=body.agent_id,
+                    requested_sats=int(body.sats or 0),
+                    destination=body.to,
+                    destination_kind=dkind,
+                    allowlist_status=None,
+                    api_key_id=api_key.id,
+                    caller_tag=caller,
+                    balance_at_decision_sats=None,
+                ),
+                OUTCOME_REJECTED,
+                reason_code="INVALID_REQUEST",
             )
-            decoded = await get_lnd().decode_invoice(invoice)
-            # SECURITY: LNURL-pay servers can return an invoice for a different
-            # amount than we asked for. Refuse to pay anything other than what
-            # the caller authorized.
-            if decoded.amount_sats > 0 and decoded.amount_sats != body.sats:
-                raise PaymentFailed(
-                    f"Lightning address {body.to} returned an invoice for "
-                    f"{decoded.amount_sats} sats but we requested {body.sats}. "
-                    "Refusing to pay — verify the destination.",
-                    lightning_address=body.to,
-                    invoice_amount_sats=decoded.amount_sats,
-                    requested_sats=body.sats,
-                )
-            dest_pubkey = decoded.destination
-            payment_hash = decoded.payment_hash
-        elif is_bolt11(body.to):
-            invoice = body.to
-            decoded = await get_lnd().decode_invoice(invoice)
-            # Same defense as /send for BOLT11.
-            sats_to_use = _resolve_bolt11_amount(decoded.amount_sats, body.sats)
-            if sats_to_use != body.sats:
-                raise InvalidInput(
-                    f"`to` is a BOLT11 invoice for {decoded.amount_sats} sats but "
-                    f"`sats`={body.sats}. They must match."
-                )
-            dest_pubkey = decoded.destination
-            payment_hash = decoded.payment_hash
-            bolt11_send_amount = body.sats if decoded.amount_sats == 0 else None
-        else:
-            raise InvalidInput(f"Unsupported destination format: {body.to}")
+            raise
 
         assert payment_hash is not None  # set in every branch above
         return await _execute_payment(
@@ -535,6 +684,9 @@ async def pay(
             dest_pubkey=dest_pubkey,
             payment_hash=payment_hash,
             bolt11_send_amount=bolt11_send_amount,
+            api_key_id=api_key.id,
+            caller_tag=caller,
+            destination_kind=dkind,
         )
 
     return await _idempotent(request, session, api_key, body, run)

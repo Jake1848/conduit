@@ -5,6 +5,43 @@ non-custodial Bitcoin/Lightning payment SDK: the operator runs it on their own
 infrastructure, in front of their own LND node, paying out their own funds.
 See `SECURITY.md` for the threat model and reporting.
 
+## [0.9.0] — Inspectable payment decision record (with margin)
+
+Every payment ATTEMPT — settled, failed, AND policy/balance/destination-rejected —
+now leaves a durable, queryable record of the decision, including the **margin to
+each threshold**: how close the attempt came to every limit, recorded even when it
+passed (a near-miss-that-passed is the signal an operator most wants to see — same
+"allowed" verdict, very different risk). Closes the gap where a rejected payment
+left no durable trace at all.
+
+**Core (new `payment_decisions` table, migration 0009):**
+- Records every decision on a SEPARATE session, best-effort, AFTER the money
+  outcome — the audit write can never block, delay-to-failure, or alter a payment
+  (pinned by a test that forces the audit write to fail and asserts the payment
+  still settles correctly).
+- The policy engine now returns structured per-rule margins (`limit / attempted /
+  current / margin_abs / margin_pct / violated`); the allow/deny verdict is
+  byte-for-byte unchanged.
+- Captures the applied-policy snapshot + sha256 at decision time, so a past
+  decision stays reconstructable after a policy is edited in place (policies aren't
+  versioned).
+- Never stores a secret: the authorizing key's id (never the key), an opt-in short
+  caller tag (`X-Conduit-Caller`, never a prompt), and the public destination — no
+  preimage, seed, or key plaintext.
+- New read-only endpoints (READ scope, `outcome` filter): `GET
+  /v1/agents/{id}/decisions`, `GET /v1/decisions/recent`, `GET /v1/decisions/{id}`.
+
+**SDKs / MCP / console:**
+- Python `conduit-btc` 0.9.0: `list_decisions()` / `get_decision()` / `agent.decisions()`.
+- TypeScript `@conduit-btc/sdk` 0.9.0: `listDecisions()` / `getDecision()`.
+- MCP `conduit-btc-mcp` 0.9.0: a read-only `conduit_decisions` tool — ask *why* a
+  payment was blocked and *how close* it came.
+- Console: a **Decisions** view surfacing the margin ("passed with 50 sats of
+  headroom" vs "BLOCKED — 500 over the cap"), with an outcome filter.
+
+**Confirmed + documented:** policy mutation requires `admin` scope — a `write`-scope
+(paying) key cannot change its own caps/allowlist (now also pinned by a test).
+
 ## [0.8.6] — MCP `conduit_pay` accepts raw pubkeys (keysend)
 
 MCP-server-only patch (`conduit-btc-mcp` → 0.8.6). Core API + SDKs unchanged.

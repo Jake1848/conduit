@@ -17,6 +17,7 @@ Tools and the API-key scope each one requires (scopes are enforced server-side):
                             raw node pubkey via keysend)
   conduit_receive         — generate an invoice for inbound funds             [write]
   conduit_transactions    — list recent transactions                          [read]
+  conduit_decisions       — inspect policy-engine decisions + margin to limit  [read]
   conduit_fees            — report the operator's platform-fee revenue        [admin]
 
 Run:
@@ -208,6 +209,53 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="conduit_decisions",
+            description=(
+                "Inspect the Conduit policy engine's DECISION RECORD — why a payment "
+                "was allowed, rejected, or failed, and HOW CLOSE it came to each limit. "
+                "Every payment attempt (settled, failed, AND policy/balance/destination-"
+                "rejected) is recorded with the MARGIN to each threshold, so an agent or "
+                "operator can ask 'why was this blocked / how close was it to the limit'.\n"
+                "  • decision_id given → fetch that one decision\n"
+                "  • else agent given → that agent's decisions, newest first\n"
+                "  • else            → the most recent decisions across the whole fleet\n"
+                "Filter a list by `outcome` to surface only rejected attempts. Each "
+                "decision carries thresholds[] with margin_abs (= limit − (current+"
+                "attempted); negative = violated) and binding_rule — present even when "
+                "ALLOWED (a near-miss-that-passed). No secret/preimage is ever returned. "
+                "Requires a READ-scope (or higher) API key."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent": {
+                        "type": "string",
+                        "description": (
+                            "Agent name or ID. Ignored when decision_id is given."
+                        ),
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "enum": ["settled", "failed", "rejected"],
+                        "description": (
+                            "Filter a list to one outcome. Ignored when fetching a "
+                            "single decision_id."
+                        ),
+                    },
+                    "decision_id": {
+                        "type": "string",
+                        "description": "Fetch one decision by id (dec_...).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "default": 50,
+                    },
+                },
+            },
+        ),
+        types.Tool(
             name="conduit_fees",
             description=(
                 "Report the platform-fee revenue collected by this self-hosted "
@@ -253,6 +301,35 @@ def _looks_like_pubkey(to: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _decision(d: dict[str, Any]) -> dict[str, Any]:
+    """Project a DecisionOut from the API into the tool result, keeping the margin
+    intact. thresholds[] carries margin_abs (= limit − (current+attempted); negative
+    = violated), so a caller can see exactly which rule bound and by how much — even
+    for a payment that PASSED (a near-miss). Only the documented READ-scope contract
+    fields are emitted; no secret/preimage is ever present in this payload.
+    """
+    return {
+        "id": d.get("id"),
+        "agent_id": d.get("agent_id"),
+        "outcome": d.get("outcome"),
+        "reason_code": d.get("reason_code"),
+        "requested_sats": d.get("requested_sats"),
+        "destination": d.get("destination"),
+        "destination_kind": d.get("destination_kind"),
+        "allowlist_status": d.get("allowlist_status"),
+        "api_key_id": d.get("api_key_id"),
+        "caller_tag": d.get("caller_tag"),
+        "balance_at_decision_sats": d.get("balance_at_decision_sats"),
+        "thresholds": d.get("thresholds", []),
+        "binding_rule": d.get("binding_rule"),
+        "min_margin_pct": d.get("min_margin_pct"),
+        "policy_snapshot": d.get("policy_snapshot"),
+        "policy_hash": d.get("policy_hash"),
+        "tx_id": d.get("tx_id"),
+        "created_at": d.get("created_at"),
+    }
 
 
 def _ok(payload: dict[str, Any]) -> list[types.TextContent]:
@@ -380,6 +457,33 @@ async def call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
                     }
                     for t in txns
                 ],
+            })
+
+        if name == "conduit_decisions":
+            # Read-only inspection of the policy engine's decision record. No
+            # high-level SDK helper, so call the read-scoped decisions endpoints
+            # directly via the low-level client (same CONDUIT_API_KEY /
+            # CONDUIT_API_URL config), mirroring conduit_fees. The server returns
+            # the full margin/threshold detail so a caller can ask "how close was
+            # it". A single decision_id wins; else an agent narrows to one wallet;
+            # else the fleet-wide recent feed.
+            client = default_client()
+            decision_id = args.get("decision_id")
+            if decision_id:
+                d = client.get(f"/v1/decisions/{decision_id}")
+                return _ok({"decision": _decision(d)})
+            params: dict[str, Any] = {"limit": int(args.get("limit", 50))}
+            outcome = args.get("outcome")
+            if outcome:
+                params["outcome"] = outcome
+            if args.get("agent"):
+                agent = _agent_for_name_or_id(args["agent"])
+                data = client.get(f"/v1/agents/{agent.id}/decisions", params=params)
+            else:
+                data = client.get("/v1/decisions/recent", params=params)
+            return _ok({
+                "decisions": [_decision(x) for x in data["data"]],
+                "has_more": data["has_more"],
             })
 
         if name == "conduit_fees":

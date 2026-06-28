@@ -21,6 +21,7 @@ from typing import Any
 
 from .agent import Agent, Balance, LedgerAdjustment, _new_idempotency_key
 from .client import Conduit
+from .decision import Decision
 from .invoice import Invoice
 from .payment import Receipt
 from .transaction import Transaction
@@ -121,6 +122,31 @@ class ConduitClient:
             params["direction"] = direction
         data = self._client.get(f"/v1/agents/{agent_id}/transactions", params=params)
         return [Transaction.from_api(item) for item in data.get("data", [])]
+
+    # ---- decisions (inspectable policy record) ----
+
+    def list_decisions(
+        self,
+        agent_id: str | None = None,
+        *,
+        outcome: str | None = None,
+        limit: int = 50,
+    ) -> list[Decision]:
+        """Inspectable payment decisions — settled, failed, AND rejected — newest
+        first, each with the margin to every threshold. Pass `agent_id` for one
+        agent (`/v1/agents/{id}/decisions`); omit it for the whole fleet
+        (`/v1/decisions/recent`). Filter by `outcome`
+        ('settled' | 'failed' | 'rejected') to surface only rejected attempts."""
+        params: dict[str, Any] = {"limit": limit}
+        if outcome:
+            params["outcome"] = outcome
+        path = f"/v1/agents/{agent_id}/decisions" if agent_id else "/v1/decisions/recent"
+        data = self._client.get(path, params=params)
+        return [Decision.from_api(item) for item in data.get("data", [])]
+
+    def get_decision(self, decision_id: str) -> Decision:
+        data = self._client.get(f"/v1/decisions/{decision_id}")
+        return Decision.from_api(data)
 
     # ---- payments ----
 

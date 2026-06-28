@@ -11,6 +11,7 @@
 from .agent import Agent, Balance, LedgerAdjustment
 from .client import Conduit, default_client, set_default_client
 from .conduit_client import ConduitClient
+from .decision import Decision, Threshold
 from .errors import (
     AgentNotFound,
     AuthenticationError,
@@ -47,6 +48,8 @@ __all__ = [
     "Receipt",
     "Invoice",
     "Transaction",
+    "Decision",
+    "Threshold",
     "ConduitError",
     "AuthenticationError",
     "PermissionDenied",

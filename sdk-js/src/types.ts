@@ -52,6 +52,95 @@ export interface TransactionJSON {
   created_at: string;
 }
 
+// ---------- Decisions (inspectable payment decision record) ----------
+
+export type DecisionOutcome = "settled" | "failed" | "rejected";
+export type DestinationKind = "bolt11" | "keysend" | "address";
+export type AllowlistStatus = "allowed" | "no_allowlist" | "not_allowlisted" | "blocklisted";
+export type ThresholdRule = "per_transaction" | "hourly" | "daily" | "rate" | "balance";
+export type ThresholdUnit = "sats" | "count";
+
+export interface ThresholdJSON {
+  rule: ThresholdRule;
+  unit: ThresholdUnit;
+  limit: number;
+  attempted: number;
+  current: number;
+  margin_abs: number;
+  margin_pct: number;
+  violated: boolean;
+}
+
+export interface DecisionJSON {
+  id: string;
+  agent_id: string;
+  outcome: DecisionOutcome;
+  reason_code: string | null;
+  requested_sats: number;
+  destination: string | null;
+  destination_kind: DestinationKind | null;
+  allowlist_status: AllowlistStatus | null;
+  api_key_id: string | null;
+  caller_tag: string | null;
+  balance_at_decision_sats: number | null;
+  thresholds: ThresholdJSON[];
+  binding_rule: string | null;
+  min_margin_pct: number | null;
+  policy_snapshot: Record<string, unknown> | null;
+  policy_hash: string | null;
+  tx_id: string | null;
+  created_at: string;
+}
+
+/** How one quantitative limit was evaluated for a payment — the margin data. */
+export interface Threshold {
+  rule: ThresholdRule;
+  unit: ThresholdUnit;
+  limit: number;
+  /** this payment's contribution to the window */
+  attempted: number;
+  /** prior usage already in the window */
+  current: number;
+  /** limit - (current + attempted); < 0 means violated — present even when ALLOWED */
+  marginAbs: number;
+  /** margin as a percent of the limit; < 0 means over */
+  marginPct: number;
+  violated: boolean;
+}
+
+/**
+ * A durable, inspectable payment decision — settled, failed, OR rejected — with
+ * the margin to each threshold, the applied-policy snapshot, and who initiated it.
+ * No secret/preimage is ever included.
+ */
+export interface Decision {
+  id: string;
+  agentId: string;
+  outcome: DecisionOutcome;
+  reasonCode: string | null;
+  requestedSats: number;
+  destination: string | null;
+  destinationKind: DestinationKind | null;
+  allowlistStatus: AllowlistStatus | null;
+  /** id of the authorizing key — never the secret */
+  apiKeyId: string | null;
+  /** opt-in caller/tool tag (X-Conduit-Caller) */
+  callerTag: string | null;
+  balanceAtDecisionSats: number | null;
+  /** per-limit margin breakdown — present even when ALLOWED (a near-miss that passed) */
+  thresholds: Threshold[];
+  /** the rule with the tightest margin */
+  bindingRule: string | null;
+  /** tightest margin across thresholds (% of its limit) */
+  minMarginPct: number | null;
+  /** the applied policy at decision time (reconstructable post-edit) */
+  policySnapshot: Record<string, unknown> | null;
+  policyHash: string | null;
+  /** linked transaction for allowed payments */
+  txId: string | null;
+  createdAt: Date;
+}
+
 export interface PolicyAttachOptions {
   maxPerTransaction?: number;
   maxPerHour?: number;
